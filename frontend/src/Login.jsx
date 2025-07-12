@@ -36,12 +36,13 @@ export default function LoginPage() {
       localStorage.setItem('user', JSON.stringify(res.user));
       // Check for inviteToken in URL
       const inviteToken = getInviteToken();
+      const params = new URLSearchParams(location.search);
+      const redirectGroupId = params.get('redirectGroupId');
       if (inviteToken) {
         try {
           if (api.joinGroupByInviteToken) {
             await api.joinGroupByInviteToken(inviteToken);
           } else {
-            // fallback fetch if api method missing
             await fetch(`/api/groups/invite/${inviteToken}/join`, {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${res.token}` }
@@ -51,8 +52,12 @@ export default function LoginPage() {
           // Optionally set error, but continue
           setError('Logged in, but failed to join group: ' + (err.message || 'Unknown error'));
         }
-        // Remove inviteToken from URL after use
-        navigate('/dashboard', { replace: true });
+        // Redirect to group details if present
+        if (redirectGroupId) {
+          navigate(`/group/${redirectGroupId}`, { replace: true });
+        } else {
+          navigate('/dashboard', { replace: true });
+        }
       } else {
         navigate('/dashboard');
       }
@@ -76,11 +81,13 @@ export default function LoginPage() {
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-gradient-to-r from-teal-400/20 to-green-400/20 rounded-full blur-3xl animate-pulse"></div>
       </div>
 
-      {/* Header */}
-      <Header />
 
       {/* Main Content */}
       <main className="relative z-10 flex flex-col items-center justify-center min-h-[calc(100vh-112px)] px-6">
+        {/* Decorative Icon */}
+        <div className="mb-6 animate-pulse">
+          <span className="inline-block text-5xl md:text-7xl bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">🔐</span>
+        </div>
         <div className="w-full max-w-md bg-white/90 backdrop-blur-md rounded-2xl shadow-xl p-8 transform transition-all duration-500">
           <h2 className="text-3xl font-extrabold text-center bg-gradient-to-r from-blue-700 to-purple-600 bg-clip-text text-transparent mb-6">
             Log In to KraLoan

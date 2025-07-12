@@ -1,36 +1,34 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { api } from './api';
 
-export default function InviteLanding() {
-  const { token } = useParams();
+export default function GroupDetails() {
+  const { groupId } = useParams();
   const [group, setGroup] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const navigate = useNavigate();
 
   useEffect(() => {
-    // Try to fetch group info by invite token
     (async () => {
       try {
         const groups = await api.listGroups();
-        const found = groups.find(g => g.inviteToken === token);
+        const found = groups.find(g => g._id === groupId);
         if (found) setGroup(found);
-        else setError('Invalid or expired invite link.');
+        else setError('Group not found.');
       } catch (err) {
         setError('Failed to fetch group info.');
       } finally {
         setLoading(false);
       }
     })();
-  }, [token]);
+  }, [groupId]);
 
-  if (loading) return <div className="p-12 text-center">Loading invite...</div>;
+  if (loading) return <div className="p-12 text-center">Loading group details...</div>;
   if (error) return <div className="p-12 text-center text-red-500">{error}</div>;
 
   return (
     <div className="max-w-lg mx-auto bg-white rounded-xl shadow-md p-8 mt-12 text-center">
-      <h2 className="text-2xl font-bold mb-2">Join Group: {group?.name}</h2>
+      <h2 className="text-2xl font-bold mb-2">Group: {group?.name}</h2>
       <p className="text-gray-600 mb-6">{group?.description}</p>
       <div className="mb-4">
         <span className="inline-block bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-medium">
@@ -40,20 +38,21 @@ export default function InviteLanding() {
           Monthly: GHS {group?.monthlyContribution}
         </span>
       </div>
-      <div className="mb-6 text-gray-500 text-sm">To join this group, please sign up or log in.</div>
-      <div className="flex gap-4 justify-center">
-        <Link
-          className="bg-blue-600 text-white px-6 py-2 rounded font-semibold hover:bg-blue-700"
-          to={`/signup?inviteToken=${token}&redirectGroupId=${group?._id}`}
-        >
-          Sign Up
-        </Link>
-        <Link
-          className="bg-gray-200 text-gray-700 px-6 py-2 rounded font-semibold hover:bg-gray-300"
-          to={`/login?inviteToken=${token}&redirectGroupId=${group?._id}`}
-        >
-          Log In
-        </Link>
+      <div className="mb-6">
+        <h3 className="font-semibold text-lg mb-2">Members</h3>
+        <ul className="text-gray-700 text-sm">
+          {group?.members.map(m => (
+            <li key={m._id || m.id}>{m.name || m.email}</li>
+          ))}
+        </ul>
+      </div>
+      <div className="mb-6">
+        <h3 className="font-semibold text-lg mb-2">Admins</h3>
+        <ul className="text-gray-700 text-sm">
+          {group?.admins.map(a => (
+            <li key={a._id || a.id}>{a.name || a.email}</li>
+          ))}
+        </ul>
       </div>
     </div>
   );

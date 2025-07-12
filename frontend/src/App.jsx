@@ -12,6 +12,7 @@ import About from "./About";
 import Contact from "./Contact";
 import ForgotPassword from "./ForgotPassword";
 import InviteLanding from "./InviteLanding";
+import GroupDetails from "./GroupDetails";
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
     <Dashboard />
   </PrivateRoute>
 } />
+        <Route path="/group/:groupId" element={<GroupDetails />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/create-group" element={<CreateGroup />} />
         <Route path="/features" element={<Features />} />

@@ -40,11 +40,16 @@ export default function HomePage() {
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-teal-300/20 rounded-full blur-3xl"></div>
       </div>
 
+
       {/* Header */}
-      <Header />
+      <Header forcePublic={true} />
 
       {/* Main Content */}
       <main className="relative z-10 flex flex-col items-center justify-center min-h-[calc(100vh-80px)] px-4">
+        {/* Decorative Top Icon */}
+        <div className="mb-6 animate-bounce">
+          <span className="inline-block text-5xl md:text-7xl bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">💸</span>
+        </div>
         <div className={`text-center max-w-3xl mx-auto transition-all duration-1000 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
           {/* Hero Section */}
           <span className="inline-block px-4 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium mb-4">

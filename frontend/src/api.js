@@ -31,6 +31,7 @@ export const api = {
   createGroup: (data) => apiRequest('/groups', { method: 'POST', body: JSON.stringify(data) }),
   listGroups: () => apiRequest('/groups'),
   joinGroup: (id) => apiRequest(`/groups/${id}/join`, { method: 'POST' }),
+  joinGroupByInviteToken: (token) => apiRequest(`/groups/invite/${token}/join`, { method: 'POST' }),
   createTransaction: (data) => apiRequest('/transactions', { method: 'POST', body: JSON.stringify(data) }),
   listTransactions: () => apiRequest('/transactions'),
 };

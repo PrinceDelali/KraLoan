@@ -27,8 +27,7 @@ export default function ForgotPassword() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 via-teal-50 to-white overflow-hidden font-sans">
-      <Header />
-      <main className="flex flex-col items-center justify-center min-h-[calc(100vh-112px)] px-4">
+      <main className="flex flex-col items-center justify-center min-h-screen px-4">
         <div className="w-full max-w-md bg-white/90 backdrop-blur-md rounded-2xl shadow-xl p-8 mt-12">
           <h2 className="text-2xl font-extrabold text-center bg-gradient-to-r from-blue-700 to-purple-600 bg-clip-text text-transparent mb-6">
             Forgot Password

@@ -79,11 +79,13 @@ export default function Register() {
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-gradient-to-r from-teal-400/20 to-green-400/20 rounded-full blur-3xl animate-pulse"></div>
       </div>
 
-      {/* Header */}
-      <Header />
 
       {/* Main Content */}
       <main className="relative z-10 flex flex-col items-center justify-center min-h-[calc(100vh-112px)] px-6">
+        {/* Decorative Icon */}
+        <div className="mb-6 animate-bounce">
+          <span className="inline-block text-5xl md:text-7xl bg-gradient-to-r from-green-400 to-blue-500 bg-clip-text text-transparent">📝</span>
+        </div>
         <div className="w-full max-w-md bg-white/90 backdrop-blur-md rounded-2xl shadow-xl p-8 transform transition-all duration-500">
           <h2 className="text-3xl font-extrabold text-center bg-gradient-to-r from-blue-700 to-purple-600 bg-clip-text text-transparent mb-6">
             Sign Up for KraLoan
