@@ -24,9 +24,9 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/signup" element={<Register />} />
         <Route path="/invite/:token" element={<InviteLanding />} />
-        <Route path="/dashboard" element={
+        <Route path="/dashboard/:tab?" element={
   <PrivateRoute>
-    <Dashboard />
+    <Dashboard key={window.location.pathname} />
   </PrivateRoute>
 } />
         <Route path="/group/:groupId" element={<GroupDetails />} />

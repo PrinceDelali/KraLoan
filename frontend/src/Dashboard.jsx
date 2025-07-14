@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { api } from './api';
+import GroupDirectory from './GroupDirectory';
+import PendingRequestsPanel from './PendingRequestsPanel';
 import {
   User,
   Home,
@@ -65,7 +67,9 @@ class ErrorBoundary extends React.Component {
 }
 
 // Sidebar Component
-const Sidebar = ({ activeTab, setActiveTab, setShowSettings, navigate }) => {
+const Sidebar = ({ activeTab, setActiveTab, setShowSettings }) => {
+  const navigate = useNavigate();
+
   return (
     <div className="w-64 bg-white shadow-xl flex flex-col">
       <div className="p-6">
@@ -81,11 +85,13 @@ const Sidebar = ({ activeTab, setActiveTab, setShowSettings, navigate }) => {
           { id: 'withdrawals', label: 'Withdrawals', icon: ArrowDownToLine },
           { id: 'chat', label: 'Help & Chat', icon: MessageCircle },
         ].map((item) => (
-          <button
+          <Link
             key={item.id}
+            to={`/dashboard/${item.id}`}
             onClick={() => {
               setActiveTab(item.id);
               setShowSettings(false);
+              navigate(`/dashboard/${item.id}`);
             }}
             className={`w-full flex items-center px-6 py-3.5 text-left text-sm font-medium transition-all duration-200 ${
               activeTab === item.id
@@ -93,10 +99,11 @@ const Sidebar = ({ activeTab, setActiveTab, setShowSettings, navigate }) => {
                 : 'text-gray-500 hover:bg-blue-50 hover:text-blue-600'
             }`}
             aria-label={`Navigate to ${item.label}`}
+            style={{ textDecoration: 'none' }}
           >
             <item.icon className="h-5 w-5 mr-3" />
             {item.label}
-          </button>
+          </Link>
         ))}
       </nav>
       <div className="p-6 border-t border-gray-200">
@@ -108,24 +115,27 @@ const Sidebar = ({ activeTab, setActiveTab, setShowSettings, navigate }) => {
           <Settings className="h-5 w-5 mr-3" />
           Settings
         </button>
-        <button
+        <Link
+          to="/login"
           onClick={() => {
             localStorage.removeItem('token');
             localStorage.removeItem('user');
-            navigate('/login');
           }}
           className="w-full flex items-center px-4 py-3 text-sm font-medium text-red-500 hover:bg-red-100 hover:text-red-700 rounded-lg transition-colors mt-2"
           aria-label="Logout"
+          style={{ textDecoration: 'none' }}
         >
           <XCircle className="h-5 w-5 mr-3" />
           Logout
-        </button>
+        </Link>
       </div>
     </div>
   );
 };
 
 const SusuDashboard = () => {
+  const { tab } = useParams();
+  const [activeTab, setActiveTab] = useState(tab || 'dashboard');
   const [showEditMembers, setShowEditMembers] = useState(false);
   const [editGroupId, setEditGroupId] = useState(null);
   const [editMembers, setEditMembers] = useState([]);
@@ -143,7 +153,6 @@ const SusuDashboard = () => {
   const [withdrawReason, setWithdrawReason] = useState('');
   const [withdrawMethod, setWithdrawMethod] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('dashboard');
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState('profile');
   const [profileData, setProfileData] = useState({
@@ -151,13 +160,31 @@ const SusuDashboard = () => {
     email: '',
     phone: '',
     address: '',
+    profileImage: '',
+    avatar: '',
   });
+  const [profileImageFile, setProfileImageFile] = useState(null);
+  const [avatarChoice, setAvatarChoice] = useState('');
+  const [avatarOptions] = useState([
+    '🧑', '👩', '👨', '🧔', '👩‍🦱', '👨‍🦱', '👩‍🦰', '👨‍🦰', '👵', '👴', '🧕', '👲', '🧑‍🎓', '🧑‍💼', '🧑‍🔬', '🧑‍🚀', '🧑‍🍳', '🧑‍🎤', '🧑‍🎨', '🧑‍🚒', '🧑‍⚕️', '🧑‍🏫', '🧑‍🔧', '🧑‍💻', '🧑‍🌾'
+  ]);
+  const [profileImgLoading, setProfileImgLoading] = useState(false);
+  const [avatarLoading, setAvatarLoading] = useState(false);
   const [groups, setGroups] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [joinStatus, setJoinStatus] = useState({});
+  const [joinLoading, setJoinLoading] = useState(null);
+  const [joinError, setJoinError] = useState({});
   const [transactions, setTransactions] = useState([]);
   const [error, setError] = useState('');
   const [selectedMember, setSelectedMember] = useState(null);
   const [showMemberProfileModal, setShowMemberProfileModal] = useState(false);
   const navigate = useNavigate();
+
+  // Sync activeTab with URL param
+  useEffect(() => {
+    setActiveTab(tab || 'dashboard');
+  }, [tab]);
 
   const formatDate = (date) => {
     if (!date) return 'N/A';
@@ -222,6 +249,23 @@ const SusuDashboard = () => {
     }
   };
 
+  const handleJoinGroupRequest = async (groupId) => {
+    setJoinLoading(groupId);
+    setJoinError((prev) => ({ ...prev, [groupId]: undefined }));
+    setJoinStatus((prev) => ({ ...prev, [groupId]: undefined }));
+    try {
+      await api.joinGroup(groupId);
+      setJoinStatus((prev) => ({ ...prev, [groupId]: { success: true, message: 'Join request sent! Pending admin approval.' } }));
+      const updatedGroups = await api.listGroups();
+      setGroups(updatedGroups);
+    } catch (err) {
+      setJoinError((prev) => ({ ...prev, [groupId]: err.message || 'Failed to send join request.' }));
+      setJoinStatus((prev) => ({ ...prev, [groupId]: { success: false, message: err.message || 'Failed to send join request.' } }));
+    } finally {
+      setJoinLoading(null);
+    }
+  };
+
   const handleJoinGroup = async (e) => {
     e.preventDefault();
     setGroupActionError('');
@@ -240,36 +284,118 @@ const SusuDashboard = () => {
     }
   };
 
-  const handleContribute = async (e) => {
-    e.preventDefault();
-    setGroupActionError('');
-    const amount = Number(contributionAmount);
-    if (isNaN(amount) || amount <= 0) {
-      setGroupActionError('Contribution amount must be a valid positive number.');
-      return;
-    }
-    if (!contributionMethod) {
-      setGroupActionError('Please select a payment method.');
-      return;
-    }
-    if (!groups[0]?._id) {
-      setGroupActionError('No group selected for contribution.');
-      return;
-    }
+  // Paystack Payment Handler
+  // Helper for Paystack callback
+  const handlePaystackCallback = async (response) => {
+    // Only call backend after successful payment
     try {
       await api.createTransaction({
         group: groups[0]._id,
         type: 'contribution',
-        amount,
+        amount: Number(contributionAmount),
         method: contributionMethod,
+        paystackRef: response.reference,
       });
       setShowContribute(false);
       setContributionAmount('');
       setContributionMethod('');
       const txs = await api.listTransactions();
       setTransactions(txs);
+      alert('Payment successful!');
     } catch (err) {
-      setGroupActionError(err.message || 'Failed to contribute.');
+      setGroupActionError(err.message || 'Payment succeeded but failed to record transaction. Contact support.');
+      console.error('[Paystack] Error saving transaction:', err);
+    }
+  };
+
+  const handlePaystackPayment = (e) => {
+    e.preventDefault();
+    setGroupActionError('');
+    console.log('[Paystack] handlePaystackPayment called');
+    const amount = Number(contributionAmount);
+    console.log('[Paystack] amount:', amount);
+    if (isNaN(amount) || amount <= 0) {
+      setGroupActionError('Contribution amount must be a valid positive number.');
+      console.error('[Paystack] Invalid amount');
+      return;
+    }
+    if (!contributionMethod) {
+      setGroupActionError('Please select a payment method.');
+      console.error('[Paystack] No payment method selected');
+      return;
+    }
+    if (!groups[0]?._id) {
+      setGroupActionError('No group selected for contribution.');
+      console.error('[Paystack] No group selected');
+      return;
+    }
+    // Get user email and phone, fallback to localStorage if needed
+    let email = profileData.email;
+    let phone = profileData.phone;
+    if (!email) {
+      try {
+        const user = JSON.parse(localStorage.getItem('user'));
+        if (user && user.email) email = user.email;
+      } catch (err) { console.error('[Paystack] Error reading email from localStorage', err); }
+    }
+    if (!phone) {
+      try {
+        const user = JSON.parse(localStorage.getItem('user'));
+        if (user && user.phone) phone = user.phone;
+      } catch (err) { console.error('[Paystack] Error reading phone from localStorage', err); }
+    }
+    console.log('[Paystack] email:', email);
+    console.log('[Paystack] phone:', phone);
+    if (!email) {
+      setGroupActionError('Your email is required for payment. Please update your profile.');
+      console.error('[Paystack] Email missing');
+      return;
+    }
+    if (!phone) {
+      setGroupActionError('Your phone number is required for payment. Please update your profile.');
+      console.error('[Paystack] Phone missing');
+      return;
+    }
+    if (!window.PaystackPop) {
+      setGroupActionError('Paystack is not loaded. Please refresh the page.');
+      console.error('[Paystack] PaystackPop not found on window');
+      return;
+    }
+    try {
+      const paystack = window.PaystackPop.setup({
+        key: 'pk_live_1e438d1597ef92d47f06638eb6b04b4a60f0801d', // Live Paystack public key
+        email,
+        amount: amount * 100, // Paystack expects kobo/pesewas
+        currency: 'GHS',
+        ref: 'KRA-' + Math.floor(Math.random() * 1000000000),
+        metadata: {
+          custom_fields: [
+            {
+              display_name: 'Phone Number',
+              variable_name: 'phone',
+              value: phone,
+            },
+            {
+              display_name: 'Payment Method',
+              variable_name: 'method',
+              value: contributionMethod,
+            }
+          ]
+        },
+        callback: function(response) {
+          console.log('[Paystack] Payment callback', response);
+          handlePaystackCallback(response);
+        },
+        onClose: function() {
+          setGroupActionError('Payment window closed. No charge was made.');
+          console.warn('[Paystack] Payment window closed');
+        }
+      });
+      paystack.openIframe();
+      console.log('[Paystack] paystack.openIframe() called');
+    } catch (err) {
+      setGroupActionError('An unexpected error occurred. See console for details.');
+      console.error('[Paystack] Exception thrown:', err);
     }
   };
 
@@ -324,6 +450,8 @@ const SusuDashboard = () => {
       const user = JSON.parse(localStorage.getItem('user'));
       if (!user?.id) throw new Error('User ID not found in localStorage');
       await api.updateProfile(user.id, profileData);
+      const updatedProfile = await api.getProfile(user.id);
+      setProfileData(updatedProfile);
       alert('Profile updated successfully!');
     } catch (err) {
       setError(err.message || 'Failed to update profile.');
@@ -345,7 +473,7 @@ const SusuDashboard = () => {
     Promise.all([
       api.getProfile(user.id).catch((err) => {
         console.error('Error fetching profile:', err);
-        return { name: '', email: user.email || '', phone: '', address: '' };
+        return { name: '', email: user.email || '', phone: '', address: '', _id: user.id };
       }),
       api.listGroups().catch((err) => {
         console.error('Error fetching groups:', err);
@@ -354,15 +482,15 @@ const SusuDashboard = () => {
       api.listTransactions().catch((err) => {
         console.error('Error fetching transactions:', err);
         return [];
-      }),
+      })
     ])
-      .then(([profile, groups, transactions]) => {
-        if (isMounted) {
-          setProfileData(profile || { name: '', email: user.email || '', phone: '', address: '' });
-          setGroups(groups || []);
-          setTransactions(transactions || []);
-          setIsLoading(false);
-        }
+      .then(([profile, groups, txs]) => {
+        if (!isMounted) return;
+        setProfileData(profile);
+        setCurrentUser(profile);
+        setGroups(groups);
+        setTransactions(txs);
+        setIsLoading(false);
       })
       .catch((err) => {
         if (isMounted) {
@@ -470,7 +598,69 @@ const SusuDashboard = () => {
                   <User className="h-5 w-5 mr-2" />
                   Profile Information
                 </h3>
-                <div className="space-y-4">
+                <div className="flex flex-col items-center mb-6">
+                  {profileData.profileImage ? (
+                    <img src={`http://localhost:5000${profileData.profileImage}`} alt="Profile" className="w-24 h-24 rounded-full object-cover border-4 border-blue-200 mb-2" />
+                  ) : profileData.avatar ? (
+                    <span className="w-24 h-24 flex items-center justify-center rounded-full bg-blue-100 text-5xl border-4 border-blue-200 mb-2">{profileData.avatar}</span>
+                  ) : (
+                    <span className="w-24 h-24 flex items-center justify-center rounded-full bg-blue-100 text-5xl border-4 border-blue-200 mb-2">👤</span>
+                  )}
+                  <div className="flex gap-4 mt-2">
+                    <label className="cursor-pointer bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 text-blue-700 border border-blue-200">
+                      Upload Image
+                      <input type="file" accept="image/*" className="hidden" onChange={e => setProfileImageFile(e.target.files[0])} />
+                    </label>
+                    <button
+                      className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 disabled:opacity-50"
+                      onClick={async () => {
+                        if (!profileImageFile) return;
+                        setProfileImgLoading(true);
+                        try {
+                          const res = await api.uploadProfileImage(profileImageFile);
+                          setProfileData(prev => ({ ...prev, profileImage: res.profileImage, avatar: '' }));
+                          setProfileImageFile(null);
+                        } catch (err) {
+                          alert(err.message || 'Failed to upload image');
+                        } finally {
+                          setProfileImgLoading(false);
+                        }
+                      }}
+                      disabled={!profileImageFile || profileImgLoading}
+                      aria-label="Upload profile image"
+                    >
+                      {profileImgLoading ? 'Uploading...' : 'Save Image'}
+                    </button>
+                  </div>
+                  <div className="mt-4 w-full">
+                    <div className="mb-2 text-sm font-medium text-gray-700">Or choose an avatar:</div>
+                    <div className="flex flex-wrap gap-2 justify-center">
+                      {avatarOptions.map(a => (
+                        <button
+                          key={a}
+                          type="button"
+                          className={`text-3xl p-1 rounded-full border-2 ${profileData.avatar === a ? 'border-blue-600' : 'border-transparent'} hover:border-blue-400 focus:outline-none`}
+                          onClick={async () => {
+                            setAvatarLoading(true);
+                            try {
+                              const res = await api.updateAvatar(a);
+                              setProfileData(prev => ({ ...prev, avatar: res.avatar, profileImage: '' }));
+                            } catch (err) {
+                              alert(err.message || 'Failed to update avatar');
+                            } finally {
+                              setAvatarLoading(false);
+                            }
+                          }}
+                          disabled={avatarLoading}
+                          aria-label={`Choose avatar ${a}`}
+                        >
+                          {a}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-4 mt-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
                     <input
@@ -599,7 +789,6 @@ const SusuDashboard = () => {
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           setShowSettings={setShowSettings}
-          navigate={navigate}
         />
         {showSettings ? (
           <div className="flex-1">
@@ -607,12 +796,34 @@ const SusuDashboard = () => {
           </div>
         ) : (
           <div className="flex-1 p-8 relative">
+            {/* Admin Pending Requests and Group Directory */}
+            <div className="mb-12">
+              {groups.filter(g => g.admins?.includes(currentUser?._id)).map(group => (
+                <PendingRequestsPanel
+                  key={group._id}
+                  group={group}
+                  currentUser={currentUser}
+                  onAction={async () => {
+                    const updatedGroups = await api.listGroups();
+                    setGroups(updatedGroups);
+                  }}
+                />
+              ))}
+              <GroupDirectory
+                allGroups={groups}
+                currentUser={currentUser}
+                onJoin={handleJoinGroupRequest}
+                joinStatus={joinStatus}
+                joinLoading={joinLoading}
+                joinError={joinError}
+              />
+            </div>
             {/* Modals */}
             {showContribute && (
               <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50">
                 <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
                   <h3 className="text-xl font-bold mb-4">Make Contribution</h3>
-                  <form className="space-y-5" onSubmit={handleContribute}>
+                  <form className="space-y-5" onSubmit={handlePaystackPayment}>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Amount (GHS)</label>
                       <input
@@ -1048,7 +1259,6 @@ const SusuDashboard = () => {
               open={showMemberProfileModal}
               onClose={() => setShowMemberProfileModal(false)}
             />
-            {/* Success Message */}
             {groupSuccessMessage && (
               <div className="mb-6 flex items-center justify-between bg-green-50 border border-green-400 text-green-800 px-6 py-3 rounded-lg shadow">
                 <span className="flex items-center">
@@ -1072,7 +1282,6 @@ const SusuDashboard = () => {
                 </button>
               </div>
             )}
-            {/* Header */}
             <div className="flex justify-between items-center mb-8">
               <h2 className="text-3xl font-bold text-gray-800">
                 Welcome, {profileData?.email || JSON.parse(localStorage.getItem('user'))?.email || 'User'}!
@@ -1094,7 +1303,6 @@ const SusuDashboard = () => {
                 </button>
               </div>
             </div>
-            {/* Tab Content */}
             {activeTab === 'dashboard' && (
               <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1140,7 +1348,10 @@ const SusuDashboard = () => {
                     <div className="font-semibold text-lg">Recent Transactions</div>
                     <button
                       className="text-blue-600 font-semibold hover:underline"
-                      onClick={() => setActiveTab('history')}
+                      onClick={() => {
+                        setActiveTab('history');
+                        navigate('/dashboard/history');
+                      }}
                       aria-label="View all transactions"
                     >
                       View All
@@ -1445,7 +1656,7 @@ const SusuDashboard = () => {
                     <div className="space-y-3">
                       <p className="text-sm text-gray-600">Need help with your account or have questions?</p>
                       <button
-                        className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-transform transform hover:scale-105 shadow-sm"
+                        className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-transform transform hover:scale-105"
                         aria-label="Contact admin"
                       >
                         Send Message
@@ -1457,7 +1668,7 @@ const SusuDashboard = () => {
                     <div className="space-y-3">
                       <p className="text-sm text-gray-600">Join the group chat to discuss with other members</p>
                       <button
-                        className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-transform transform hover:scale-105 shadow-sm"
+                        className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-transform transform hover:scale-105"
                         aria-label="Join group chat"
                       >
                         Join Chat
@@ -1474,7 +1685,6 @@ const SusuDashboard = () => {
   );
 };
 
-// Member Profile Modal
 function MemberProfileModal({ member, open, onClose }) {
   if (!open || !member) return null;
   return (

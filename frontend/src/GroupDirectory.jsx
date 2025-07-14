@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Users, Search, Plus } from 'lucide-react';
 
-export default function GroupDirectory({ allGroups, onJoin }) {
+export default function GroupDirectory({ allGroups, currentUser, onJoin, joinStatus, joinLoading, joinError }) {
   const [search, setSearch] = useState('');
 
   // Filter groups by search query (name or description)
@@ -48,12 +48,37 @@ export default function GroupDirectory({ allGroups, onJoin }) {
                   </div>
                 </div>
               </div>
-              <button
-                className="mt-4 w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center justify-center gap-2 font-semibold disabled:opacity-60"
-                onClick={() => onJoin(group._id)}
-              >
-                <Plus className="h-5 w-5" /> Join Group
-              </button>
+               {/* Join status logic */}
+              {group.members.includes(currentUser?._id) ? (
+                <button
+                  className="mt-4 w-full py-2 bg-green-600 text-white rounded font-semibold opacity-70 cursor-not-allowed"
+                  disabled
+                >
+                  Member
+                </button>
+              ) : group.pendingRequests?.includes(currentUser?._id) ? (
+                <button
+                  className="mt-4 w-full py-2 bg-yellow-500 text-white rounded font-semibold opacity-70 cursor-not-allowed"
+                  disabled
+                >
+                  Pending Approval
+                </button>
+              ) : (
+                <button
+                  className="mt-4 w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center justify-center gap-2 font-semibold disabled:opacity-60"
+                  onClick={() => onJoin(group._id)}
+                  disabled={joinLoading === group._id}
+                >
+                  {joinLoading === group._id ? 'Joining...' : (<><Plus className="h-5 w-5" /> Join Group</>)}
+                </button>
+              )}
+              {/* Feedback */}
+              {joinStatus && joinStatus[group._id] && (
+                <div className={`mt-2 text-sm ${joinStatus[group._id].success ? 'text-green-700' : 'text-red-600'}`}>{joinStatus[group._id].message}</div>
+              )}
+              {joinError && joinError[group._id] && (
+                <div className="mt-2 text-sm text-red-600">{joinError[group._id]}</div>
+              )}
             </div>
           ))
         ) : (

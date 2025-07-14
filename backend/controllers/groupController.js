@@ -53,12 +53,21 @@ exports.joinGroup = async (req, res) => {
   try {
     const group = await Group.findById(req.params.id);
     if (!group) return res.status(404).json({ message: 'Group not found' });
-    if (!group.members.includes(req.user.userId)) {
-      group.members.push(req.user.userId);
-      await group.save();
-      await User.findByIdAndUpdate(req.user.userId, { $push: { groups: group._id } });
+
+    // Already a member
+    if (group.members.includes(req.user.userId)) {
+      return res.status(400).json({ message: 'You are already a member of this group.' });
     }
-    res.json(group);
+    // Already requested
+    if (group.pendingRequests.includes(req.user.userId)) {
+      return res.status(400).json({ message: 'You have already requested to join this group. Please wait for admin approval.' });
+    }
+    // Add to pending requests
+    group.pendingRequests.push(req.user.userId);
+    await group.save();
+
+    // (Simulated) Notify admin(s) - in a real app, send notification/email
+    res.json({ message: 'Join request sent. Waiting for admin approval.' });
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
   }

@@ -5,6 +5,7 @@ const GroupSchema = new mongoose.Schema({
   description: { type: String },
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   admins: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  pendingRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   targetAmount: { type: Number, default: 0 },
   monthlyContribution: { type: Number, default: 0 },
   startDate: { type: Date },

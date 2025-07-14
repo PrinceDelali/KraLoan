@@ -6,6 +6,8 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 app.use(express.json());
+// Serve uploads directory for profile images
+app.use('/uploads', express.static(require('path').join(__dirname, 'uploads')));
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI, {

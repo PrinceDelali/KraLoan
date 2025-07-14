@@ -8,6 +8,8 @@ const UserSchema = new mongoose.Schema({
   address: { type: String },
   role: { type: String, enum: ['member', 'admin'], default: 'member' },
   groups: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Group' }],
+  profileImage: { type: String }, // URL or file path to profile picture
+  avatar: { type: String }, // Predefined avatar choice
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', UserSchema);
