@@ -1,4 +1,5 @@
 import React from "react";
+import NotificationProvider from "./components/NotificationProvider";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./AuthContext";
 import HomePage from "./HomePage";
@@ -41,4 +42,14 @@ function App() {
   );
 }
 
-export default App;
+export default function WrappedApp() {
+  return (
+    <NotificationProvider>
+      <App />
+    </NotificationProvider>
+  );
+}
+
+// For hot reload compatibility
+export { WrappedApp as App };
+

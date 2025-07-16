@@ -11,6 +11,8 @@ export default function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [userType, setUserType] = useState('individual');
+  const [ghanaCard, setGhanaCard] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -37,9 +39,14 @@ export default function Register() {
       setError('Passwords do not match');
       return;
     }
+    // Ghana Card validation for Susu Collector
+    if (userType === 'susu_collector' && !ghanaCard) {
+      setError('Ghana Card number is required for Susu Collectors.');
+      return;
+    }
     setLoading(true);
     try {
-      const res = await api.register({ email, password, name: email }); // You can prompt for name if desired
+      const res = await api.register({ email, password, name: email, userType, ghanaCard }); // userType and ghanaCard added
       // Immediately log in after registration
       const loginRes = await api.login({ email, password });
       localStorage.setItem('token', loginRes.token);
@@ -103,6 +110,24 @@ export default function Register() {
 
           {/* Email/Password Form */}
           <form onSubmit={handleEmailSignUp} className="space-y-6">
+            {/* User Type Selector */}
+            <div>
+              <label htmlFor="userType" className="block text-sm font-medium text-gray-700 mb-1">
+                Register as
+              </label>
+              <select
+                id="userType"
+                name="userType"
+                value={userType}
+                onChange={e => setUserType(e.target.value)}
+                className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 outline-none transition-all duration-300"
+              >
+                <option value="individual">Individual</option>
+                <option value="group_member">Group Member</option>
+                <option value="susu_collector">Susu Collector</option>
+              </select>
+            </div>
+            {/* Email field */}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
                 Email Address
@@ -118,6 +143,24 @@ export default function Register() {
                 placeholder="Enter your email"
               />
             </div>
+            {/* Ghana Card field (conditional) */}
+            {(userType === 'susu_collector' || userType === 'group_member' || userType === 'individual') && (
+              <div>
+                <label htmlFor="ghanaCard" className="block text-sm font-medium text-gray-700 mb-1">
+                  Ghana Card Number {userType === 'susu_collector' ? <span className="text-red-500">*</span> : <span className="text-gray-400">(optional)</span>}
+                </label>
+                <input
+                  id="ghanaCard"
+                  name="ghanaCard"
+                  type="text"
+                  value={ghanaCard}
+                  onChange={e => setGhanaCard(e.target.value)}
+                  className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 outline-none transition-all duration-300"
+                  placeholder="Ghana Card Number"
+                  required={userType === 'susu_collector'}
+                />
+              </div>
+            )}
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">Password</label>
               <div className="relative">

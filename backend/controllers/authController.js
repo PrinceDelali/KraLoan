@@ -4,16 +4,20 @@ const jwt = require('jsonwebtoken');
 
 exports.register = async (req, res) => {
   try {
-    const { name, email, password, phone, address } = req.body;
+    const { name, email, password, phone, address, userType = 'individual', ghanaCard } = req.body;
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'Name, email, and password are required.' });
+    }
+    // Ghana Card validation for Susu Collector
+    if (userType === 'susu_collector' && !ghanaCard) {
+      return res.status(400).json({ message: 'Ghana Card number is required for Susu Collectors.' });
     }
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: 'Email already registered.' });
     }
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({ name, email, password: hashedPassword, phone, address });
+    const user = new User({ name, email, password: hashedPassword, phone, address, userType, ghanaCard });
     await user.save();
     res.status(201).json({ message: 'User registered successfully.' });
   } catch (err) {

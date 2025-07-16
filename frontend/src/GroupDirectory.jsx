@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { Users, Search, Plus } from 'lucide-react';
 
 export default function GroupDirectory({ allGroups, currentUser, onJoin, joinStatus, joinLoading, joinError }) {
@@ -19,6 +20,12 @@ export default function GroupDirectory({ allGroups, currentUser, onJoin, joinSta
       <div className="flex items-center gap-4 mb-4">
         <Users className="h-7 w-7 text-blue-600" />
         <h2 className="text-3xl font-bold text-gray-800 flex-1">Group Directory</h2>
+        <Link
+          to="/create-group"
+          className="bg-green-600 hover:bg-green-700 text-white font-semibold px-4 py-2 rounded-lg shadow"
+        >
+          + Create Group
+        </Link>
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-2.5 text-gray-400 h-5 w-5" />
           <input
@@ -47,15 +54,36 @@ export default function GroupDirectory({ allGroups, currentUser, onJoin, joinSta
                     <div className="font-medium">GHS {group.monthlyContribution}</div>
                   </div>
                 </div>
+                {/* Show user role if member */}
+                {group.members.includes(currentUser?._id) && (
+                  <div className="text-xs text-blue-700 font-semibold mb-1">
+                    Role: {group.admins.includes(currentUser?._id) ? 'Admin' : 'Member'}
+                  </div>
+                )}
               </div>
-               {/* Join status logic */}
+              {/* Join status logic & actions */}
               {group.members.includes(currentUser?._id) ? (
-                <button
-                  className="mt-4 w-full py-2 bg-green-600 text-white rounded font-semibold opacity-70 cursor-not-allowed"
-                  disabled
-                >
-                  Member
-                </button>
+                <div className="flex flex-col gap-2 mt-4">
+                  <Link
+                    to={`/groups/${group._id}`}
+                    className="w-full py-2 bg-blue-600 text-white rounded font-semibold text-center hover:bg-blue-700"
+                  >
+                    View Group
+                  </Link>
+                  {/* Copy Invite Link for Admins */}
+                  {group.admins.includes(currentUser?._id) && group.inviteToken && (
+                    <button
+                      className="w-full py-2 bg-gray-200 text-gray-800 rounded font-semibold text-center hover:bg-gray-300"
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${window.location.origin}/register?inviteToken=${group.inviteToken}`);
+                        alert('Invite link copied!');
+                      }}
+                    >
+                      Copy Invite Link
+                    </button>
+                  )}
+                </div>
               ) : group.pendingRequests?.includes(currentUser?._id) ? (
                 <button
                   className="mt-4 w-full py-2 bg-yellow-500 text-white rounded font-semibold opacity-70 cursor-not-allowed"

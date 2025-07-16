@@ -19,13 +19,9 @@ const storage = multer.diskStorage({
   }
 });
 
+// Accept all file types for group messages
 const fileFilter = (req, file, cb) => {
-  // Accept image files only
-  if (file.mimetype.startsWith('image/')) {
-    cb(null, true);
-  } else {
-    cb(new Error('Only image files are allowed!'), false);
-  }
+  cb(null, true);
 };
 
 const upload = multer({ storage, fileFilter });

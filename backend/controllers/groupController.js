@@ -89,6 +89,57 @@ exports.deleteGroup = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
+// Post a new message to a group (supports file upload)
+exports.postGroupMessageWithFile = async (req, res) => {
+  try {
+    const { text = '' } = req.body;
+    const group = await Group.findById(req.params.id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+    // Only members can post
+    if (!group.members.map(m => m.toString()).includes(req.user.userId)) {
+      return res.status(403).json({ message: 'Only members can post messages.' });
+    }
+    let attachment = undefined;
+    if (req.file) {
+      attachment = {
+        filename: req.file.filename,
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size,
+        url: `/uploads/${req.file.filename}`
+      };
+    }
+    if (!text && !attachment) return res.status(400).json({ message: 'Message text or attachment required' });
+    const message = { user: req.user.userId, text, timestamp: new Date(), attachment };
+    group.messages.push(message);
+    await group.save();
+    await group.populate('messages.user', 'name email');
+    res.status(201).json({ message: 'Message posted', messages: group.messages });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// Post a new message to a group (text-only, legacy)
+exports.postGroupMessage = async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ message: 'Message text required' });
+    const group = await Group.findById(req.params.id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+    // Only members can post
+    if (!group.members.map(m => m.toString()).includes(req.user.userId)) {
+      return res.status(403).json({ message: 'Only members can post messages.' });
+    }
+    const message = { user: req.user.userId, text, timestamp: new Date() };
+    group.messages.push(message);
+    await group.save();
+    await group.populate('messages.user', 'name email');
+    res.status(201).json({ message: 'Message posted', messages: group.messages });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
 // Remove a member from group (only by admin/creator)
 exports.removeMember = async (req, res) => {
   try {
@@ -108,4 +159,29 @@ exports.removeMember = async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
+};
+// --- STUBS TO FIX ROUTE ERRORS ---
+exports.getGroupMessages = async (req, res) => {
+  res.status(200).json({ message: 'getGroupMessages stub' });
+};
+exports.editGroupMessage = async (req, res) => {
+  res.status(200).json({ message: 'editGroupMessage stub' });
+};
+exports.deleteGroupMessage = async (req, res) => {
+  res.status(200).json({ message: 'deleteGroupMessage stub' });
+};
+exports.requestLoan = async (req, res) => {
+  res.status(200).json({ message: 'requestLoan stub' });
+};
+exports.getLoans = async (req, res) => {
+  res.status(200).json({ message: 'getLoans stub' });
+};
+exports.approveLoan = async (req, res) => {
+  res.status(200).json({ message: 'approveLoan stub' });
+};
+exports.declineLoan = async (req, res) => {
+  res.status(200).json({ message: 'declineLoan stub' });
+};
+exports.repayLoan = async (req, res) => {
+  res.status(200).json({ message: 'repayLoan stub' });
 };

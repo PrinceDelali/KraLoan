@@ -73,6 +73,35 @@ async function declineJoinRequest(groupId, userId) {
   });
 }
 
+async function postGroupMessageWithFile(groupId, text, file) {
+  const token = getToken();
+  const formData = new FormData();
+  formData.append('text', text || '');
+  if (file) formData.append('file', file);
+  const res = await fetch(`${API_BASE}/groups/${groupId}/messages`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: res.statusText }));
+    throw new Error(err.message || 'API error');
+  }
+  return res.json();
+}
+
+async function editGroupMessage(groupId, messageId, text) {
+  return apiRequest(`/groups/${groupId}/messages/${messageId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ text })
+  });
+}
+async function deleteGroupMessage(groupId, messageId) {
+  return apiRequest(`/groups/${groupId}/messages/${messageId}`, {
+    method: 'DELETE'
+  });
+}
+
 export const api = {
   deleteGroup: (id) => apiRequest(`/groups/${id}`, { method: 'DELETE' }),
   removeMember: (groupId, userId) => apiRequest(`/groups/${groupId}/remove-member`, { method: 'POST', body: JSON.stringify({ userId }) }),
@@ -91,4 +120,42 @@ export const api = {
   getPendingRequests,
   approveJoinRequest,
   declineJoinRequest,
+  editGroupMessage,
+  deleteGroupMessage,
+  postGroupMessageWithFile,
+};
+
+// Group loan APIs
+async function requestLoan(groupId, amount, reason) {
+  return apiRequest(`/groups/${groupId}/loans`, {
+    method: 'POST',
+    body: JSON.stringify({ amount, reason }),
+  });
+}
+
+async function getLoans(groupId) {
+  return apiRequest(`/groups/${groupId}/loans`, { method: 'GET' });
+}
+
+async function approveLoan(groupId, loanId) {
+  return apiRequest(`/groups/${groupId}/loans/${loanId}/approve`, { method: 'POST' });
+}
+
+async function declineLoan(groupId, loanId) {
+  return apiRequest(`/groups/${groupId}/loans/${loanId}/decline`, { method: 'POST' });
+}
+
+async function repayLoan(groupId, loanId, amount) {
+  return apiRequest(`/groups/${groupId}/loans/${loanId}/repay`, {
+    method: 'POST',
+    body: JSON.stringify({ amount }),
+  });
+}
+
+export {
+  requestLoan,
+  getLoans,
+  approveLoan,
+  declineLoan,
+  repayLoan,
 };

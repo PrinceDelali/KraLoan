@@ -6,6 +6,8 @@ const UserSchema = new mongoose.Schema({
   password: { type: String, required: true },
   phone: { type: String },
   address: { type: String },
+  userType: { type: String, enum: ['individual', 'group_member', 'susu_collector'], default: 'individual' },
+  ghanaCard: { type: String },
   role: { type: String, enum: ['member', 'admin'], default: 'member' },
   groups: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Group' }],
   profileImage: { type: String }, // URL or file path to profile picture

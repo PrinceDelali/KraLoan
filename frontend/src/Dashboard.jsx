@@ -89,9 +89,7 @@ const Sidebar = ({ activeTab, setActiveTab, setShowSettings }) => {
             key={item.id}
             to={`/dashboard/${item.id}`}
             onClick={() => {
-              setActiveTab(item.id);
               setShowSettings(false);
-              navigate(`/dashboard/${item.id}`);
             }}
             className={`w-full flex items-center px-6 py-3.5 text-left text-sm font-medium transition-all duration-200 ${
               activeTab === item.id
@@ -133,8 +131,52 @@ const Sidebar = ({ activeTab, setActiveTab, setShowSettings }) => {
   );
 };
 
+// Member Profile Modal Component
+const MemberProfileModal = ({ member, open, onClose }) => {
+  if (!open || !member) return null;
+  return (
+    <div className="fixed inset-0 z-50 bg-black bg-opacity-30 flex items-center justify-center">
+      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-xs relative">
+        <button
+          className="absolute top-2 right-2 text-gray-400 hover:text-gray-700"
+          onClick={onClose}
+          aria-label="Close member profile"
+        >
+          <X className="h-6 w-6" />
+        </button>
+        <div className="flex flex-col items-center">
+          <div className="w-16 h-16 rounded-full bg-blue-200 flex items-center justify-center text-3xl font-bold text-blue-700 mb-2">
+            {member.name
+              ? member.name
+                  .split(' ')
+                  .map((x) => x[0])
+                  .join('')
+                  .toUpperCase()
+                  .slice(0, 2)
+              : member.email
+              ? member.email[0].toUpperCase()
+              : '?'}
+          </div>
+          <div className="font-semibold text-lg mb-1">{member.name || 'User'}</div>
+          <div className="text-gray-500 text-sm mb-2">{member.email || 'N/A'}</div>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button
+            className="px-4 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+            onClick={onClose}
+            aria-label="Close member profile"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const SusuDashboard = () => {
   const { tab } = useParams();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(tab || 'dashboard');
   const [showEditMembers, setShowEditMembers] = useState(false);
   const [editGroupId, setEditGroupId] = useState(null);
@@ -164,7 +206,6 @@ const SusuDashboard = () => {
     avatar: '',
   });
   const [profileImageFile, setProfileImageFile] = useState(null);
-  const [avatarChoice, setAvatarChoice] = useState('');
   const [avatarOptions] = useState([
     '🧑', '👩', '👨', '🧔', '👩‍🦱', '👨‍🦱', '👩‍🦰', '👨‍🦰', '👵', '👴', '🧕', '👲', '🧑‍🎓', '🧑‍💼', '🧑‍🔬', '🧑‍🚀', '🧑‍🍳', '🧑‍🎤', '🧑‍🎨', '🧑‍🚒', '🧑‍⚕️', '🧑‍🏫', '🧑‍🔧', '🧑‍💻', '🧑‍🌾'
   ]);
@@ -179,12 +220,49 @@ const SusuDashboard = () => {
   const [error, setError] = useState('');
   const [selectedMember, setSelectedMember] = useState(null);
   const [showMemberProfileModal, setShowMemberProfileModal] = useState(false);
-  const navigate = useNavigate();
+  const [recentActivity, setRecentActivity] = useState([]);
 
   // Sync activeTab with URL param
   useEffect(() => {
     setActiveTab(tab || 'dashboard');
   }, [tab]);
+
+  // Recent activity: combine group messages and loan events
+  useEffect(() => {
+    async function fetchActivity() {
+      try {
+        const groups = await api.listGroups();
+        let activity = [];
+        for (const g of groups) {
+          if (g.messages && g.messages.length) {
+            activity = activity.concat(
+              g.messages.slice(-3).map(m => ({
+                type: 'message',
+                group: g,
+                ...m,
+                date: m.timestamp || m.createdAt
+              }))
+            );
+          }
+          if (g.loans && g.loans.length) {
+            activity = activity.concat(
+              g.loans.slice(-3).map(l => ({
+                type: 'loan',
+                group: g,
+                ...l,
+                date: l.updatedAt || l.createdAt
+              }))
+            );
+          }
+        }
+        activity.sort((a, b) => new Date(b.date) - new Date(a.date));
+        setRecentActivity(activity.slice(0, 8));
+      } catch (err) { 
+        setRecentActivity([]);
+      }
+    }
+    fetchActivity();
+  }, []);
 
   const formatDate = (date) => {
     if (!date) return 'N/A';
@@ -284,10 +362,8 @@ const SusuDashboard = () => {
     }
   };
 
-  // Paystack Payment Handler
   // Helper for Paystack callback
   const handlePaystackCallback = async (response) => {
-    // Only call backend after successful payment
     try {
       await api.createTransaction({
         group: groups[0]._id,
@@ -329,7 +405,7 @@ const SusuDashboard = () => {
       console.error('[Paystack] No group selected');
       return;
     }
-    // Get user email and phone, fallback to localStorage if needed
+    
     let email = profileData.email;
     let phone = profileData.phone;
     if (!email) {
@@ -344,8 +420,10 @@ const SusuDashboard = () => {
         if (user && user.phone) phone = user.phone;
       } catch (err) { console.error('[Paystack] Error reading phone from localStorage', err); }
     }
+    
     console.log('[Paystack] email:', email);
     console.log('[Paystack] phone:', phone);
+    
     if (!email) {
       setGroupActionError('Your email is required for payment. Please update your profile.');
       console.error('[Paystack] Email missing');
@@ -361,11 +439,12 @@ const SusuDashboard = () => {
       console.error('[Paystack] PaystackPop not found on window');
       return;
     }
+    
     try {
       const paystack = window.PaystackPop.setup({
-        key: 'pk_live_1e438d1597ef92d47f06638eb6b04b4a60f0801d', // Live Paystack public key
+        key: 'pk_live_1e438d1597ef92d47f06638eb6b04b4a60f0801d',
         email,
-        amount: amount * 100, // Paystack expects kobo/pesewas
+        amount: amount * 100,
         currency: 'GHS',
         ref: 'KRA-' + Math.floor(Math.random() * 1000000000),
         metadata: {
@@ -782,528 +861,137 @@ const SusuDashboard = () => {
     }
   };
 
+  // Show settings if showSettings is true
+  if (showSettings) {
+    return (
+      <ErrorBoundary>
+        <div className="flex min-h-screen bg-gray-50">
+          <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} setShowSettings={setShowSettings} />
+          {renderSettings()}
+        </div>
+      </ErrorBoundary>
+    );
+  }
+
   return (
     <ErrorBoundary>
-      <div className="min-h-screen bg-gray-100 flex font-sans">
-        <Sidebar
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          setShowSettings={setShowSettings}
-        />
-        {showSettings ? (
-          <div className="flex-1">
-            {renderSettings()}
-          </div>
-        ) : (
-          <div className="flex-1 p-8 relative">
-            {/* Admin Pending Requests and Group Directory */}
-            <div className="mb-12">
-              {groups.filter(g => g.admins?.includes(currentUser?._id)).map(group => (
-                <PendingRequestsPanel
-                  key={group._id}
-                  group={group}
+      <div className="flex min-h-screen bg-gray-50">
+        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} setShowSettings={setShowSettings} />
+        <main className="flex-1 p-4 sm:p-8">
+          {activeTab === 'dashboard' && (
+            <React.Fragment>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                {/* Quick Actions */}
+                <div className="bg-white rounded-xl shadow p-6 flex flex-col items-center">
+                  <h3 className="text-lg font-semibold mb-4">Quick Actions</h3>
+                  <button className="w-full bg-blue-600 text-white px-4 py-2 rounded mb-2 hover:bg-blue-700" onClick={() => setShowCreateGroup(true)}>Create Group</button>
+                  <button className="w-full bg-green-600 text-white px-4 py-2 rounded mb-2 hover:bg-green-700" onClick={() => setShowJoinGroup(true)}>Join Group</button>
+                  <button className="w-full bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600" onClick={() => setActiveTab('loans')}>Request Loan</button>
+                </div>
+                {/* Recent Activity */}
+                <div className="bg-white rounded-xl shadow p-6 md:col-span-2">
+                  <h3 className="text-lg font-semibold mb-4">Recent Activity</h3>
+                  {recentActivity.length === 0 ? (
+                    <div className="text-gray-400">No recent activity.</div>
+                  ) : (
+                    <ul className="divide-y divide-gray-100">
+                      {recentActivity.slice(0, 8).map((item, i) => (
+                        <li key={i} className="py-3 flex flex-col md:flex-row md:items-center md:justify-between">
+                          <div>
+                            {item.type === 'message' ? (
+                              <span className="text-blue-700 font-semibold">[Message]</span>
+                            ) : (
+                              <span className="text-yellow-700 font-semibold">[Loan]</span>
+                            )}
+                            <span className="ml-2 text-gray-700">
+                              {item.type === 'message' ? (
+                                <>
+                                  <span className="font-medium">{item.user?.name || item.user?.email || 'User'}</span>: {item.text?.slice(0, 60)}
+                                </>
+                              ) : (
+                                <>
+                                  <span className="font-medium">{item.requester?.name || item.requester?.email || 'User'}</span> requested GHS {item.amount} ({item.status})
+                                </>
+                              )}
+                            </span>
+                            <span className="ml-2 text-xs text-gray-400">in {item.group?.name}</span>
+                          </div>
+                          <div className="text-xs text-gray-500 mt-2 md:mt-0 md:ml-4">{formatDate(item.date)}</div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+              {/* Admin Pending Requests and Group Directory */}
+              <div className="mb-12">
+                {groups.filter(g => g.admins?.includes(currentUser?._id)).map(group => (
+                  <PendingRequestsPanel
+                    key={group._id}
+                    group={group}
+                    currentUser={currentUser}
+                    onAction={async () => {
+                      const updatedGroups = await api.listGroups();
+                      setGroups(updatedGroups);
+                    }}
+                  />
+                ))}
+                <GroupDirectory
+                  allGroups={groups}
                   currentUser={currentUser}
-                  onAction={async () => {
-                    const updatedGroups = await api.listGroups();
-                    setGroups(updatedGroups);
-                  }}
+                  onJoin={handleJoinGroupRequest}
+                  joinStatus={joinStatus}
+                  joinLoading={joinLoading}
+                  joinError={joinError}
                 />
-              ))}
-              <GroupDirectory
-                allGroups={groups}
-                currentUser={currentUser}
-                onJoin={handleJoinGroupRequest}
-                joinStatus={joinStatus}
-                joinLoading={joinLoading}
-                joinError={joinError}
-              />
-            </div>
-            {/* Modals */}
-            {showContribute && (
-              <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50">
-                <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
-                  <h3 className="text-xl font-bold mb-4">Make Contribution</h3>
-                  <form className="space-y-5" onSubmit={handlePaystackPayment}>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Amount (GHS)</label>
-                      <input
-                        type="number"
-                        min="1"
-                        placeholder="e.g. 100"
-                        value={contributionAmount}
-                        onChange={(e) => setContributionAmount(e.target.value)}
-                        className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
-                        required
-                        aria-required="true"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Enter the amount you wish to contribute.</p>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
-                      <select
-                        value={contributionMethod}
-                        onChange={(e) => setContributionMethod(e.target.value)}
-                        className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
-                        required
-                        aria-required="true"
-                      >
-                        <option value="">Select a method</option>
-                        <option value="Mobile Money">Mobile Money</option>
-                        <option value="Card">Card</option>
-                        <option value="Bank">Bank</option>
-                      </select>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Choose your preferred payment method for this contribution.
-                      </p>
-                    </div>
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-3">
-                      <DollarSign className="h-6 w-6 text-blue-500" />
-                      <div>
-                        <div className="text-sm text-gray-700">You are about to contribute</div>
-                        <div className="font-bold text-lg text-blue-700">GHS {contributionAmount || 0}</div>
-                        <div className="text-xs text-gray-500">Method: {contributionMethod || '-'}</div>
-                      </div>
-                    </div>
-                    {groupActionError && (
-                      <div className="text-red-600 text-sm flex items-center">
-                        <AlertCircle className="h-4 w-4 mr-2" />
-                        {groupActionError}
-                      </div>
-                    )}
-                    <div className="flex justify-end space-x-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowContribute(false);
-                          setContributionAmount('');
-                          setContributionMethod('');
-                        }}
-                        className="px-5 py-2 rounded-lg bg-gray-200 text-gray-800 font-semibold hover:bg-gray-300 transition"
-                        aria-label="Cancel contribution"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={
-                          !contributionAmount ||
-                          !contributionMethod ||
-                          Number(contributionAmount) <= 0 ||
-                          isLoading
-                        }
-                        className={`px-5 py-2 rounded-lg font-semibold transition ${
-                          !contributionAmount ||
-                          !contributionMethod ||
-                          Number(contributionAmount) <= 0 ||
-                          isLoading
-                            ? 'bg-green-300 text-white cursor-not-allowed'
-                            : 'bg-green-600 text-white hover:bg-green-700 hover:scale-105 shadow-sm'
-                        }`}
-                        aria-label="Submit contribution"
-                      >
-                        {isLoading ? (
-                          <span className="flex items-center">
-                            <Loader2 className="animate-spin h-4 w-4 mr-2" />
-                            Processing...
-                          </span>
-                        ) : (
-                          'Submit Contribution'
-                        )}
-                      </button>
-                    </div>
-                  </form>
-                </div>
               </div>
-            )}
-            {showWithdraw && (
-              <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50">
-                <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
-                  <h3 className="text-xl font-bold mb-4">Request Withdrawal</h3>
-                  <form className="space-y-5" onSubmit={handleWithdraw}>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Amount (GHS)</label>
-                      <input
-                        type="number"
-                        min="1"
-                        placeholder="e.g. 100"
-                        value={withdrawAmount}
-                        onChange={(e) => setWithdrawAmount(e.target.value)}
-                        className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
-                        required
-                        aria-required="true"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Enter the amount you wish to withdraw.</p>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Withdrawal Method</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Bank, Mobile Money"
-                        value={withdrawMethod}
-                        onChange={(e) => setWithdrawMethod(e.target.value)}
-                        className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
-                        required
-                        aria-required="true"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Specify how you want to receive your funds.</p>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
-                      <textarea
-                        placeholder="Reason for withdrawal"
-                        value={withdrawReason}
-                        onChange={(e) => setWithdrawReason(e.target.value)}
-                        className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
-                        required
-                        aria-required="true"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Provide a reason for your withdrawal request.</p>
-                    </div>
-                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex items-center gap-3">
-                      <ArrowDownToLine className="h-6 w-6 text-purple-500" />
-                      <div>
-                        <div className="text-sm text-gray-700">You are requesting to withdraw</div>
-                        <div className="font-bold text-lg text-purple-700">GHS {withdrawAmount || 0}</div>
-                        <div className="text-xs text-gray-500">Method: {withdrawMethod || '-'}</div>
-                      </div>
-                    </div>
-                    {groupActionError && (
-                      <div className="text-red-600 text-sm flex items-center">
-                        <AlertCircle className="h-4 w-4 mr-2" />
-                        {groupActionError}
-                      </div>
-                    )}
-                    <div className="flex justify-end space-x-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowWithdraw(false);
-                          setWithdrawAmount('');
-                          setWithdrawMethod('');
-                          setWithdrawReason('');
-                        }}
-                        className="px-5 py-2 rounded-lg bg-gray-200 text-gray-800 font-semibold hover:bg-gray-300 transition"
-                        aria-label="Cancel withdrawal"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={
-                          !withdrawAmount ||
-                          !withdrawMethod ||
-                          !withdrawReason ||
-                          Number(withdrawAmount) <= 0 ||
-                          isLoading
-                        }
-                        className={`px-5 py-2 rounded-lg font-semibold transition ${
-                          !withdrawAmount ||
-                          !withdrawMethod ||
-                          !withdrawReason ||
-                          Number(withdrawAmount) <= 0 ||
-                          isLoading
-                            ? 'bg-green-300 text-white cursor-not-allowed'
-                            : 'bg-green-600 text-white hover:bg-green-700 hover:scale-105 shadow-sm'
-                        }`}
-                        aria-label="Submit withdrawal"
-                      >
-                        {isLoading ? (
-                          <span className="flex items-center">
-                            <Loader2 className="animate-spin h-4 w-4 mr-2" />
-                            Processing...
-                          </span>
-                        ) : (
-                          'Request Withdrawal'
-                        )}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            )}
-            {showCreateGroup && (
-              <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 transition-opacity duration-300">
-                <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-lg transform transition-all duration-300">
-                  <div className="flex justify-between items-center mb-6">
-                    <div className="flex items-center">
-                      <Users className="h-7 w-7 text-blue-600 mr-3" />
-                      <h3 className="text-2xl font-bold text-gray-800">Create a New Group</h3>
-                    </div>
-                    <button
-                      onClick={() => setShowCreateGroup(false)}
-                      className="text-gray-400 hover:text-gray-600"
-                      aria-label="Close create group modal"
+              
+              {groupSuccessMessage && (
+                <div className="mb-6 flex items-center justify-between bg-green-50 border border-green-400 text-green-800 px-6 py-3 rounded-lg shadow">
+                  <span className="flex items-center">
+                    <svg
+                      className="h-6 w-6 mr-2 text-green-500"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      viewBox="0 0 24 24"
                     >
-                      <X className="h-6 w-6" />
-                    </button>
-                  </div>
-                  <form className="space-y-5" onSubmit={handleCreateGroup}>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Group Name</label>
-                      <input
-                        type="text"
-                        placeholder="e.g., Family Savings"
-                        value={newGroup.name}
-                        onChange={(e) => setNewGroup({ ...newGroup, name: e.target.value })}
-                        className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
-                        required
-                        aria-required="true"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Enter a unique name for your group.</p>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Target Amount (GHS)</label>
-                        <input
-                          type="number"
-                          min="1"
-                          placeholder="e.g., 5000"
-                          value={newGroup.targetAmount}
-                          onChange={(e) => setNewGroup({ ...newGroup, targetAmount: e.target.value })}
-                          className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
-                          required
-                          aria-required="true"
-                        />
-                        <p className="text-xs text-gray-500 mt-1">Total amount the group aims to save.</p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Monthly Contribution (GHS)
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          placeholder="e.g., 500"
-                          value={newGroup.monthlyContribution}
-                          onChange={(e) => setNewGroup({ ...newGroup, monthlyContribution: e.target.value })}
-                          className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
-                          required
-                          aria-required="true"
-                        />
-                        <p className="text-xs text-gray-500 mt-1">
-                          How much each member should contribute monthly.
-                        </p>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                      <textarea
-                        placeholder="A brief description of the group's purpose"
-                        value={newGroup.description}
-                        onChange={(e) => setNewGroup({ ...newGroup, description: e.target.value })}
-                        className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
-                        rows="3"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Describe the group's goal or rules (optional).</p>
-                    </div>
-                    {groupActionError && (
-                      <div className="text-red-600 text-sm flex items-center">
-                        <AlertCircle className="h-4 w-4 mr-2" />
-                        {groupActionError}
-                      </div>
-                    )}
-                    <div className="flex justify-end space-x-4 pt-4">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowCreateGroup(false);
-                          setNewGroup({ name: '', description: '', targetAmount: '', monthlyContribution: '' });
-                        }}
-                        className="px-6 py-2.5 rounded-lg bg-gray-200 text-gray-800 font-semibold hover:bg-gray-300 transition"
-                        aria-label="Cancel create group"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={
-                          !newGroup.name ||
-                          !newGroup.targetAmount ||
-                          !newGroup.monthlyContribution ||
-                          Number(newGroup.targetAmount) <= 0 ||
-                          Number(newGroup.monthlyContribution) <= 0 ||
-                          isLoading
-                        }
-                        className={`px-6 py-2.5 rounded-lg font-semibold transition ${
-                          !newGroup.name ||
-                          !newGroup.targetAmount ||
-                          !newGroup.monthlyContribution ||
-                          Number(newGroup.targetAmount) <= 0 ||
-                          Number(newGroup.monthlyContribution) <= 0 ||
-                          isLoading
-                            ? 'bg-green-300 text-white cursor-not-allowed'
-                            : 'bg-green-600 text-white hover:bg-green-700 hover:scale-105 shadow-sm'
-                        }`}
-                        aria-label="Create group"
-                      >
-                        {isLoading ? (
-                          <span className="flex items-center">
-                            <Loader2 className="animate-spin h-4 w-4 mr-2" />
-                            Creating...
-                          </span>
-                        ) : (
-                          'Create Group'
-                        )}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            )}
-            {showJoinGroup && (
-              <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 transition-opacity duration-300">
-                <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md transform transition-all duration-300">
-                  <div className="flex justify-between items-center mb-6">
-                    <div className="flex items-center">
-                      <LogIn className="h-7 w-7 text-blue-600 mr-3" />
-                      <h3 className="text-2xl font-bold text-gray-800">Join an Existing Group</h3>
-                    </div>
-                    <button
-                      onClick={() => setShowJoinGroup(false)}
-                      className="text-gray-400 hover:text-gray-600"
-                      aria-label="Close join group modal"
-                    >
-                      <X className="h-6 w-6" />
-                    </button>
-                  </div>
-                  <form className="space-y-5" onSubmit={handleJoinGroup}>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Invite Code</label>
-                      <input
-                        type="text"
-                        placeholder="Enter the invite code you received"
-                        value={joinGroupId}
-                        onChange={(e) => setJoinGroupId(e.target.value)}
-                        className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
-                        required
-                        aria-required="true"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        Paste the invite code you received from the group admin.
-                      </p>
-                    </div>
-                    {groupActionError && (
-                      <div className="text-red-600 text-sm flex items-center">
-                        <AlertCircle className="h-4 w-4 mr-2" />
-                        {groupActionError}
-                      </div>
-                    )}
-                    <div className="flex justify-end space-x-4 pt-4">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowJoinGroup(false);
-                          setJoinGroupId('');
-                        }}
-                        className="px-6 py-2.5 rounded-lg bg-gray-200 text-gray-800 font-semibold hover:bg-gray-300 transition"
-                        aria-label="Cancel join group"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={!joinGroupId || isLoading}
-                        className={`px-6 py-2.5 rounded-lg font-semibold transition ${
-                          !joinGroupId || isLoading
-                            ? 'bg-blue-300 text-white cursor-not-allowed'
-                            : 'bg-blue-600 text-white hover:bg-blue-700 hover:scale-105 shadow-sm'
-                        }`}
-                        aria-label="Join group"
-                      >
-                        {isLoading ? (
-                          <span className="flex items-center">
-                            <Loader2 className="animate-spin h-4 w-4 mr-2" />
-                            Joining...
-                          </span>
-                        ) : (
-                          'Join Group'
-                        )}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            )}
-            {showEditMembers && (
-              <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-                <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
-                  <h3 className="text-xl font-bold mb-4">Edit Members</h3>
-                  <div className="space-y-3">
-                    {editMembers.map((member) => (
-                      <div key={member._id} className="flex items-center justify-between">
-                        <div>{member.name || member.email || 'Unknown'}</div>
-                        <button
-                          onClick={() => handleRemoveMember(member._id)}
-                          className="text-red-600 hover:text-red-800"
-                          aria-label={`Remove ${member.name || member.email || 'member'}`}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex justify-end space-x-3 mt-4">
-                    <button
-                      onClick={() => setShowEditMembers(false)}
-                      className="px-4 py-2 rounded-lg bg-gray-200 text-gray-800 font-semibold hover:bg-gray-300 transition"
-                      aria-label="Cancel edit members"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-            <MemberProfileModal
-              member={selectedMember}
-              open={showMemberProfileModal}
-              onClose={() => setShowMemberProfileModal(false)}
-            />
-            {groupSuccessMessage && (
-              <div className="mb-6 flex items-center justify-between bg-green-50 border border-green-400 text-green-800 px-6 py-3 rounded-lg shadow">
-                <span className="flex items-center">
-                  <svg
-                    className="h-6 w-6 mr-2 text-green-500"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    viewBox="0 0 24 24"
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    {groupSuccessMessage}
+                  </span>
+                  <button
+                    onClick={() => setGroupSuccessMessage('')}
+                    aria-label="Dismiss success message"
+                    className="text-green-600 hover:text-green-900 ml-4 font-bold"
                   >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                  {groupSuccessMessage}
-                </span>
-                <button
-                  onClick={() => setGroupSuccessMessage('')}
-                  aria-label="Dismiss success message"
-                  className="text-green-600 hover:text-green-900 ml-4 font-bold"
-                >
-                  ×
-                </button>
+                    ×
+                  </button>
+                </div>
+              )}
+              
+              <div className="flex justify-between items-center mb-8">
+                <h2 className="text-3xl font-bold text-gray-800">
+                  Welcome, {profileData?.email || JSON.parse(localStorage.getItem('user'))?.email || 'User'}!
+                </h2>
+                <div className="flex items-center space-x-4">
+                  <button
+                    onClick={() => setShowCreateGroup(true)}
+                    className="bg-green-600 text-white px-5 py-2.5 rounded-lg font-semibold hover:bg-green-700 transition-transform transform hover:scale-105 shadow-sm"
+                    aria-label="Create new group"
+                  >
+                    Create Group
+                  </button>
+                  <button
+                    onClick={() => setShowJoinGroup(true)}
+                    className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-semibold hover:bg-blue-700 transition-transform transform hover:scale-105 shadow-sm"
+                    aria-label="Join existing group"
+                  >
+                    Join Group
+                  </button>
+                </div>
               </div>
-            )}
-            <div className="flex justify-between items-center mb-8">
-              <h2 className="text-3xl font-bold text-gray-800">
-                Welcome, {profileData?.email || JSON.parse(localStorage.getItem('user'))?.email || 'User'}!
-              </h2>
-              <div className="flex items-center space-x-4">
-                <button
-                  onClick={() => setShowCreateGroup(true)}
-                  className="bg-green-600 text-white px-5 py-2.5 rounded-lg font-semibold hover:bg-green-700 transition-transform transform hover:scale-105 shadow-sm"
-                  aria-label="Create new group"
-                >
-                  Create Group
-                </button>
-                <button
-                  onClick={() => setShowJoinGroup(true)}
-                  className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-semibold hover:bg-blue-700 transition-transform transform hover:scale-105 shadow-sm"
-                  aria-label="Join existing group"
-                >
-                  Join Group
-                </button>
-              </div>
-            </div>
-            {activeTab === 'dashboard' && (
+              
               <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="bg-white rounded-xl shadow-md p-6 flex flex-col items-center hover:shadow-lg transition-shadow duration-300">
@@ -1322,6 +1010,7 @@ const SusuDashboard = () => {
                     <div className="text-2xl font-bold text-purple-600">GHS {groupTarget}</div>
                   </div>
                 </div>
+                
                 <div className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow duration-300">
                   <div className="flex justify-between items-center mb-4">
                     <div>
@@ -1343,6 +1032,7 @@ const SusuDashboard = () => {
                     />
                   </div>
                 </div>
+                
                 <div className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow duration-300">
                   <div className="flex justify-between items-center mb-4">
                     <div className="font-semibold text-lg">Recent Transactions</div>
@@ -1375,6 +1065,7 @@ const SusuDashboard = () => {
                     )}
                   </div>
                 </div>
+                
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                   <button
                     className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-transform transform hover:scale-105 shadow-sm"
@@ -1399,332 +1090,754 @@ const SusuDashboard = () => {
                   </button>
                 </div>
               </div>
-            )}
-            {activeTab === 'savings' && (
-              <div className="space-y-8">
-                <div className="flex justify-between items-center">
-                  <h2 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-green-600">
-                    My Savings Groups
-                  </h2>
-                  <button
-                    className="bg-gradient-to-r from-green-500 to-green-700 text-white px-6 py-3 rounded-lg font-semibold hover:from-green-600 hover:to-green-800 transition-transform transform hover:scale-105 shadow-lg flex items-center"
-                    onClick={() => setShowCreateGroup(true)}
-                    aria-label="Create new group"
-                  >
-                    <Plus className="h-5 w-5 mr-2" />
-                    Create New Group
-                  </button>
-                </div>
-                {groups.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {groups.map((group) => (
-                      <div
-                        key={group._id}
-                        className="bg-white rounded-xl shadow-md p-6 hover:shadow-xl transition-all duration-300 transform hover:scale-105 animate-fade-in"
-                      >
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <h3 className="text-lg font-semibold text-gray-800">{group.name}</h3>
-                            <p className="text-sm text-gray-500 mt-1">{group.description || 'No description'}</p>
-                            <div className="mt-2 text-sm text-gray-600">
-                              <span>Target: GHS {group.targetAmount || 0}</span> |{' '}
-                              <span>Monthly: GHS {group.monthlyContribution || 0}</span>
-                            </div>
-                          </div>
-                          <div className="flex space-x-3">
-                            <button
-                              onClick={() => handleOpenEditMembers(group)}
-                              className="text-blue-600 hover:text-blue-800 transition-transform transform hover:scale-110"
-                              aria-label={`Edit members of ${group.name}`}
-                            >
-                              <Edit3 className="h-6 w-6" />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteGroup(group._id);
-                              }}
-                              className="text-red-600 hover:text-red-800 transition-transform transform hover:scale-110"
-                              aria-label={`Delete ${group.name}`}
-                            >
-                              <XCircle className="h-6 w-6" />
-                            </button>
-                          </div>
-                        </div>
-                        <div className="mt-4">
-                          <div className="text-sm font-medium text-gray-700">Members: {group.members?.length || 0}</div>
-                          <div className="w-full bg-gray-200 rounded-full h-2.5 mt-2">
-                            <div
-                              className="bg-gradient-to-r from-blue-500 to-green-500 h-2.5 rounded-full"
-                              style={{ width: `${Math.min((group.totalSaved / group.targetAmount) * 100, 100)}%` }}
-                            />
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            Saved: GHS {group.totalSaved || 0} of {group.targetAmount || 0}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="bg-gradient-to-br from-blue-50 to-green-50 rounded-xl shadow-md p-8 text-center animate-slide-up">
-                    <PiggyBank className="h-12 w-12 text-blue-500 mx-auto mb-4" />
-                    <p className="text-gray-600 text-lg">No groups yet. Start by creating or joining a savings group!</p>
-                    <div className="mt-6 flex justify-center space-x-4">
-                      <button
-                        className="bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition-transform transform hover:scale-105"
-                        onClick={() => setShowCreateGroup(true)}
-                        aria-label="Create new group"
-                      >
-                        Create Group
-                      </button>
-                      <button
-                        className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-transform transform hover:scale-105"
-                        onClick={() => setShowJoinGroup(true)}
-                        aria-label="Join existing group"
-                      >
-                        Join Group
-                      </button>
-                    </div>
-                  </div>
-                )}
+            </React.Fragment>
+          )}
+          
+          {activeTab === 'savings' && (
+            <div className="space-y-8">
+              <div className="flex justify-between items-center">
+                <h2 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-green-600">
+                  My Savings Groups
+                </h2>
+                <button
+                  className="bg-gradient-to-r from-green-500 to-green-700 text-white px-6 py-3 rounded-lg font-semibold hover:from-green-600 hover:to-green-800 transition-transform transform hover:scale-105 shadow-lg flex items-center"
+                  onClick={() => setShowCreateGroup(true)}
+                  aria-label="Create new group"
+                >
+                  <Plus className="h-5 w-5 mr-2" />
+                  Create New Group
+                </button>
               </div>
-            )}
-            {activeTab === 'history' && (
-              <div className="space-y-6">
-                <h2 className="text-3xl font-bold text-gray-800">Contribution History</h2>
-                <div className="bg-white rounded-xl shadow-md overflow-x-auto hover:shadow-lg transition-shadow duration-300">
-                  <table className="min-w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {contributionHistory.length > 0 ? (
-                        contributionHistory.map((contribution, index) => (
-                          <tr key={index}>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {formatDate(contribution.date || contribution.createdAt)}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                              GHS {contribution.amount || 0}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <StatusBadge status={contribution.status || 'Completed'} />
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {contribution.method || 'N/A'}
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan="4" className="px-6 py-4 text-center text-gray-500">
-                            No contribution history yet.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-            {activeTab === 'upcoming' && (
-              <div className="space-y-6">
-                <h2 className="text-3xl font-bold text-gray-800">Upcoming Payments & Events</h2>
-                <div className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow duration-300">
-                  <div className="flex justify-between items-center mb-4">
-                    <div>
-                      <div className="font-medium">Next Contribution</div>
-                      <div className="text-sm text-gray-600">{groups[0]?.nextContributionDate || 'N/A'}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold text-blue-600">GHS {monthlyContribution}</div>
-                      <div className="text-sm text-gray-600">
-                        {groups[0]?.daysUntilNextContribution
-                          ? `in ${groups[0].daysUntilNextContribution} days`
-                          : ''}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-blue-100 p-4 rounded-lg border-l-4 border-blue-500">
-                    <p className="text-sm text-blue-800 flex items-center">
-                      <Clock className="h-4 w-4 inline mr-1" /> Don't forget! Set up auto-pay to never
-                      miss a contribution.
-                    </p>
-                  </div>
-                </div>
-                <div className="bg-white rounded-xl shadow-md p-6 mt-6 hover:shadow-lg transition-shadow duration-300">
-                  <h3 className="font-semibold mb-2">Upcoming Events</h3>
-                  <ul className="list-disc list-inside text-gray-700">
-                    <li>
-                      Group meeting: {notifications.find((n) => n.type === 'meeting')?.time || 'No meetings scheduled.'}
-                    </li>
-                    <li>Next payment: {groups[0]?.nextContributionDate || 'N/A'}</li>
-                  </ul>
-                </div>
-              </div>
-            )}
-            {activeTab === 'notifications' && (
-              <div className="space-y-6">
-                <h2 className="text-3xl font-bold text-gray-800">Notifications</h2>
-                <div className="space-y-4">
-                  {notifications.map((notification) => (
+              
+              {groups.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {groups.map((group) => (
                     <div
-                      key={notification.id}
-                      className="bg-white rounded-xl shadow-md p-4 flex items-start hover:shadow-lg transition-shadow duration-300"
+                      key={group._id}
+                      className="bg-white rounded-xl shadow-md p-6 hover:shadow-xl transition-all duration-300 transform hover:scale-105"
                     >
-                      <div className="flex-shrink-0 mr-3">
-                        {notification.type === 'reminder' && <AlertCircle className="h-5 w-5 text-yellow-500" />}
-                        {notification.type === 'approval' && <CheckCircle className="h-5 w-5 text-green-500" />}
-                        {notification.type === 'meeting' && <Calendar className="h-5 w-5 text-blue-500" />}
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-800">{group.name}</h3>
+                          <p className="text-sm text-gray-500 mt-1">{group.description || 'No description'}</p>
+                          <div className="mt-2 text-sm text-gray-600">
+                            <span>Target: GHS {group.targetAmount || 0}</span> |{' '}
+                            <span>Monthly: GHS {group.monthlyContribution || 0}</span>
+                          </div>
+                        </div>
+                        <div className="flex space-x-3">
+                          <button
+                            onClick={() => handleOpenEditMembers(group)}
+                            className="text-blue-600 hover:text-blue-800 transition-transform transform hover:scale-110"
+                            aria-label={`Edit members of ${group.name}`}
+                          >
+                            <Edit3 className="h-6 w-6" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteGroup(group._id);
+                            }}
+                            className="text-red-600 hover:text-red-800 transition-transform transform hover:scale-110"
+                            aria-label={`Delete ${group.name}`}
+                          >
+                            <XCircle className="h-6 w-6" />
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex-1">
-                        <div className="font-medium">{notification.message}</div>
-                        <div className="text-xs text-gray-500 mt-1">{notification.time}</div>
+                      <div className="mt-4">
+                        <div className="text-sm font-medium text-gray-700">Members: {group.members?.length || 0}</div>
+                        <div className="w-full bg-gray-200 rounded-full h-2.5 mt-2">
+                          <div
+                            className="bg-gradient-to-r from-blue-500 to-green-500 h-2.5 rounded-full"
+                            style={{ width: `${Math.min((group.totalSaved / group.targetAmount) * 100, 100)}%` }}
+                          />
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          Saved: GHS {group.totalSaved || 0} of {group.targetAmount || 0}
+                        </div>
                       </div>
                     </div>
                   ))}
-                  {notifications.length === 0 && (
-                    <div className="text-gray-400 text-center">No notifications yet.</div>
-                  )}
                 </div>
-              </div>
-            )}
-            {activeTab === 'withdrawals' && (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-3xl font-bold text-gray-800">Withdrawals</h2>
-                  <button
-                    className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-semibold hover:bg-blue-700 transition-transform transform hover:scale-105 shadow-sm"
-                    onClick={() => setShowWithdraw(true)}
-                    aria-label="Request withdrawal"
-                  >
-                    Request Withdrawal
-                  </button>
+              ) : (
+                <div className="bg-gradient-to-br from-blue-50 to-green-50 rounded-xl shadow-md p-8 text-center">
+                  <PiggyBank className="h-12 w-12 text-blue-500 mx-auto mb-4" />
+                  <p className="text-gray-600 text-lg">No groups yet. Start by creating or joining a savings group!</p>
+                  <div className="mt-6 flex justify-center space-x-4">
+                    <button
+                      className="bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition-transform transform hover:scale-105"
+                      onClick={() => setShowCreateGroup(true)}
+                      aria-label="Create new group"
+                    >
+                      Create Group
+                    </button>
+                    <button
+                      className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-transform transform hover:scale-105"
+                      onClick={() => setShowJoinGroup(true)}
+                      aria-label="Join existing group"
+                    >
+                      Join Group
+                    </button>
+                  </div>
                 </div>
-                <div className="bg-white rounded-xl shadow-md overflow-x-auto hover:shadow-lg transition-shadow duration-300">
-                  <table className="min-w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reason</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {withdrawals.length > 0 ? (
-                        withdrawals.map((withdrawal, index) => (
-                          <tr key={index}>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {formatDate(withdrawal.date || withdrawal.createdAt)}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                              GHS {withdrawal.amount || 0}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <StatusBadge status={withdrawal.status || 'Completed'} />
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {withdrawal.reason || 'N/A'}
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan="4" className="px-6 py-4 text-center text-gray-500">
-                            No withdrawals yet.
+              )}
+            </div>
+          )}
+          
+          {activeTab === 'history' && (
+            <div className="space-y-6">
+              <h2 className="text-3xl font-bold text-gray-800">Contribution History</h2>
+              <div className="bg-white rounded-xl shadow-md overflow-x-auto hover:shadow-lg transition-shadow duration-300">
+                <table className="min-w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {contributionHistory.length > 0 ? (
+                      contributionHistory.map((contribution, index) => (
+                        <tr key={index}>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {formatDate(contribution.date || contribution.createdAt)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            GHS {contribution.amount || 0}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <StatusBadge status={contribution.status || 'Completed'} />
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {contribution.method || 'N/A'}
                           </td>
                         </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="4" className="px-6 py-4 text-center text-gray-500">
+                          No contribution history yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          
+          {activeTab === 'upcoming' && (
+            <div className="space-y-6">
+              <h2 className="text-3xl font-bold text-gray-800">Upcoming Payments & Events</h2>
+              <div className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow duration-300">
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <div className="font-medium">Next Contribution</div>
+                    <div className="text-sm text-gray-600">{groups[0]?.nextContributionDate || 'N/A'}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-bold text-blue-600">GHS {monthlyContribution}</div>
+                    <div className="text-sm text-gray-600">
+                      {groups[0]?.daysUntilNextContribution
+                        ? `in ${groups[0].daysUntilNextContribution} days`
+                        : ''}
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-blue-100 p-4 rounded-lg border-l-4 border-blue-500">
+                  <p className="text-sm text-blue-800 flex items-center">
+                    <Clock className="h-4 w-4 inline mr-1" /> Don't forget! Set up auto-pay to never
+                    miss a contribution.
+                  </p>
+                </div>
+              </div>
+              <div className="bg-white rounded-xl shadow-md p-6 mt-6 hover:shadow-lg transition-shadow duration-300">
+                <h3 className="font-semibold mb-2">Upcoming Events</h3>
+                <ul className="list-disc list-inside text-gray-700">
+                  <li>
+                    Group meeting: {notifications.find((n) => n.type === 'meeting')?.time || 'No meetings scheduled.'}
+                  </li>
+                  <li>Next payment: {groups[0]?.nextContributionDate || 'N/A'}</li>
+                </ul>
+              </div>
+            </div>
+          )}
+          
+          {activeTab === 'notifications' && (
+            <div className="space-y-6">
+              <h2 className="text-3xl font-bold text-gray-800">Notifications</h2>
+              <div className="space-y-4">
+                {notifications.map((notification) => (
+                  <div
+                    key={notification.id}
+                    className="bg-white rounded-xl shadow-md p-4 flex items-start hover:shadow-lg transition-shadow duration-300"
+                  >
+                    <div className="flex-shrink-0 mr-3">
+                      {notification.type === 'reminder' && <AlertCircle className="h-5 w-5 text-yellow-500" />}
+                      {notification.type === 'approval' && <CheckCircle className="h-5 w-5 text-green-500" />}
+                      {notification.type === 'meeting' && <Calendar className="h-5 w-5 text-blue-500" />}
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-medium">{notification.message}</div>
+                      <div className="text-xs text-gray-500 mt-1">{notification.time}</div>
+                    </div>
+                  </div>
+                ))}
+                {notifications.length === 0 && (
+                  <div className="text-gray-400 text-center">No notifications yet.</div>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {activeTab === 'withdrawals' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-3xl font-bold text-gray-800">Withdrawals</h2>
+                <button
+                  className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-semibold hover:bg-blue-700 transition-transform transform hover:scale-105 shadow-sm"
+                  onClick={() => setShowWithdraw(true)}
+                  aria-label="Request withdrawal"
+                >
+                  Request Withdrawal
+                </button>
+              </div>
+              <div className="bg-white rounded-xl shadow-md overflow-x-auto hover:shadow-lg transition-shadow duration-300">
+                <table className="min-w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {withdrawals.length > 0 ? (
+                      withdrawals.map((withdrawal, index) => (
+                        <tr key={index}>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {formatDate(withdrawal.date || withdrawal.createdAt)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            GHS {withdrawal.amount || 0}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <StatusBadge status={withdrawal.status || 'Completed'} />
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {withdrawal.reason || 'N/A'}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="4" className="px-6 py-4 text-center text-gray-500">
+                          No withdrawals yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          
+          {activeTab === 'chat' && (
+            <div className="space-y-6">
+              <h2 className="text-3xl font-bold text-gray-800">Help & Community Chat</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow duration-300">
+                  <h3 className="text-lg font-semibold mb-4">Contact Admin</h3>
+                  <div className="space-y-3">
+                    <p className="text-sm text-gray-600">Need help with your account or have questions?</p>
+                    <button
+                      className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-transform transform hover:scale-105"
+                      aria-label="Contact admin"
+                    >
+                      Send Message
+                    </button>
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow duration-300">
+                  <h3 className="text-lg font-semibold mb-4">Group Discussion</h3>
+                  <div className="space-y-3">
+                    <p className="text-sm text-gray-600">Join the group chat to discuss with other members</p>
+                    <button
+                      className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-transform transform hover:scale-105"
+                      aria-label="Join group chat"
+                    >
+                      Join Chat
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Modals */}
+          {showContribute && (
+            <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50">
+              <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+                <h3 className="text-xl font-bold mb-4">Make Contribution</h3>
+                <form className="space-y-5" onSubmit={handlePaystackPayment}>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Amount (GHS)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="e.g. 100"
+                      value={contributionAmount}
+                      onChange={(e) => setContributionAmount(e.target.value)}
+                      className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
+                      required
+                      aria-required="true"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Enter the amount you wish to contribute.</p>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <img src="https://assets.paystack.com/assets/img/logos/paystack-logo-primary.svg" alt="Paystack Logo" className="h-5" />
+                      <span className="text-xs text-green-700 font-semibold bg-green-50 rounded px-2 py-1">Paystack Secured</span>
+                    </div>
+                    <p className="text-xs text-gray-700 mb-2">
+                      You can pay securely with <span className="font-medium">Mobile Money</span>, <span className="font-medium">Card</span>, or <span className="font-medium">Bank</span> via Paystack.<br/>
+                      <span className="text-green-600">All payments are processed securely and instantly.</span>
+                    </p>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+                    <select
+                      value={contributionMethod}
+                      onChange={(e) => setContributionMethod(e.target.value)}
+                      className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
+                      required
+                      aria-required="true"
+                      aria-label="Select payment method"
+                    >
+                      <option value="">Select a method</option>
+                      <option value="Mobile Money">Mobile Money</option>
+                      <option value="Card">Card</option>
+                      <option value="Bank">Bank</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Choose your preferred payment method for this contribution.<br/>
+                      <span className="text-blue-600">Need help? <a href="https://paystack.com/help" target="_blank" rel="noopener noreferrer" className="underline">Learn more about Paystack payments</a></span>
+                    </p>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-3">
+                    <DollarSign className="h-6 w-6 text-blue-500" />
+                    <div>
+                      <div className="text-sm text-gray-700">You are about to contribute</div>
+                      <div className="font-bold text-lg text-blue-700">GHS {contributionAmount || 0}</div>
+                      <div className="text-xs text-gray-500">Method: {contributionMethod || '-'}</div>
+                    </div>
+                  </div>
+                  {groupActionError && (
+                    <div className="text-red-600 text-sm flex items-center">
+                      <AlertCircle className="h-4 w-4 mr-2" />
+                      {groupActionError}
+                    </div>
+                  )}
+                  <div className="flex justify-end space-x-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowContribute(false);
+                        setContributionAmount('');
+                        setContributionMethod('');
+                      }}
+                      className="px-5 py-2 rounded-lg bg-gray-200 text-gray-800 font-semibold hover:bg-gray-300 transition"
+                      aria-label="Cancel contribution"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={
+                        !contributionAmount ||
+                        !contributionMethod ||
+                        Number(contributionAmount) <= 0 ||
+                        isLoading
+                      }
+                      className={`px-5 py-2 rounded-lg font-semibold transition ${
+                        !contributionAmount ||
+                        !contributionMethod ||
+                        Number(contributionAmount) <= 0 ||
+                        isLoading
+                          ? 'bg-green-300 text-white cursor-not-allowed'
+                          : 'bg-green-600 text-white hover:bg-green-700 hover:scale-105 shadow-sm'
+                      }`}
+                      aria-label="Submit contribution"
+                    >
+                      {isLoading ? (
+                        <span className="flex items-center">
+                          <Loader2 className="animate-spin h-4 w-4 mr-2" />
+                          Processing...
+                        </span>
+                      ) : (
+                        'Submit Contribution'
                       )}
-                    </tbody>
-                  </table>
-                </div>
+                    </button>
+                  </div>
+                </form>
               </div>
-            )}
-            {activeTab === 'chat' && (
-              <div className="space-y-6">
-                <h2 className="text-3xl font-bold text-gray-800">Help & Community Chat</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow duration-300">
-                    <h3 className="text-lg font-semibold mb-4">Contact Admin</h3>
-                    <div className="space-y-3">
-                      <p className="text-sm text-gray-600">Need help with your account or have questions?</p>
-                      <button
-                        className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-transform transform hover:scale-105"
-                        aria-label="Contact admin"
-                      >
-                        Send Message
-                      </button>
+            </div>
+          )}
+          
+          {showWithdraw && (
+            <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50">
+              <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+                <h3 className="text-xl font-bold mb-4">Request Withdrawal</h3>
+                <form className="space-y-5" onSubmit={handleWithdraw}>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Amount (GHS)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="e.g. 100"
+                      value={withdrawAmount}
+                      onChange={(e) => setWithdrawAmount(e.target.value)}
+                      className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
+                      required
+                      aria-required="true"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Enter the amount you wish to withdraw.</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Withdrawal Method</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Bank, Mobile Money"
+                      value={withdrawMethod}
+                      onChange={(e) => setWithdrawMethod(e.target.value)}
+                      className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
+                      required
+                      aria-required="true"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Specify how you want to receive your funds.</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+                    <textarea
+                      placeholder="Reason for withdrawal"
+                      value={withdrawReason}
+                      onChange={(e) => setWithdrawReason(e.target.value)}
+                      className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
+                      required
+                      aria-required="true"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Provide a reason for your withdrawal request.</p>
+                  </div>
+                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex items-center gap-3">
+                    <ArrowDownToLine className="h-6 w-6 text-purple-500" />
+                    <div>
+                      <div className="text-sm text-gray-700">You are requesting to withdraw</div>
+                      <div className="font-bold text-lg text-purple-700">GHS {withdrawAmount || 0}</div>
+                      <div className="text-xs text-gray-500">Method: {withdrawMethod || '-'}</div>
                     </div>
                   </div>
-                  <div className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow duration-300">
-                    <h3 className="text-lg font-semibold mb-4">Group Discussion</h3>
-                    <div className="space-y-3">
-                      <p className="text-sm text-gray-600">Join the group chat to discuss with other members</p>
-                      <button
-                        className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-transform transform hover:scale-105"
-                        aria-label="Join group chat"
-                      >
-                        Join Chat
-                      </button>
+                  {groupActionError && (
+                    <div className="text-red-600 text-sm flex items-center">
+                      <AlertCircle className="h-4 w-4 mr-2" />
+                      {groupActionError}
+                    </div>
+                  )}
+                  <div className="flex justify-end space-x-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowWithdraw(false);
+                        setWithdrawAmount('');
+                        setWithdrawMethod('');
+                        setWithdrawReason('');
+                      }}
+                      className="px-5 py-2 rounded-lg bg-gray-200 text-gray-800 font-semibold hover:bg-gray-300 transition"
+                      aria-label="Cancel withdrawal"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={
+                        !withdrawAmount ||
+                        !withdrawMethod ||
+                        !withdrawReason ||
+                        Number(withdrawAmount) <= 0 ||
+                        isLoading
+                      }
+                      className={`px-5 py-2 rounded-lg font-semibold transition ${
+                        !withdrawAmount ||
+                        !withdrawMethod ||
+                        !withdrawReason ||
+                        Number(withdrawAmount) <= 0 ||
+                        isLoading
+                          ? 'bg-green-300 text-white cursor-not-allowed'
+                          : 'bg-green-600 text-white hover:bg-green-700 hover:scale-105 shadow-sm'
+                      }`}
+                      aria-label="Submit withdrawal"
+                    >
+                      {isLoading ? (
+                        <span className="flex items-center">
+                          <Loader2 className="animate-spin h-4 w-4 mr-2" />
+                          Processing...
+                        </span>
+                      ) : (
+                        'Request Withdrawal'
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+          
+          {showCreateGroup && (
+            <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 transition-opacity duration-300">
+              <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-lg transform transition-all duration-300">
+                <div className="flex justify-between items-center mb-6">
+                  <div className="flex items-center">
+                    <Users className="h-7 w-7 text-blue-600 mr-3" />
+                    <h3 className="text-2xl font-bold text-gray-800">Create a New Group</h3>
+                  </div>
+                  <button
+                    onClick={() => setShowCreateGroup(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                    aria-label="Close create group modal"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
+                <form className="space-y-5" onSubmit={handleCreateGroup}>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Group Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., Family Savings"
+                      value={newGroup.name}
+                      onChange={(e) => setNewGroup({ ...newGroup, name: e.target.value })}
+                      className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
+                      required
+                      aria-required="true"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Enter a unique name for your group.</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Target Amount (GHS)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="e.g., 5000"
+                        value={newGroup.targetAmount}
+                        onChange={(e) => setNewGroup({ ...newGroup, targetAmount: e.target.value })}
+                        className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
+                        required
+                        aria-required="true"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Total amount the group aims to save.</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Monthly Contribution (GHS)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="e.g., 500"
+                        value={newGroup.monthlyContribution}
+                        onChange={(e) => setNewGroup({ ...newGroup, monthlyContribution: e.target.value })}
+                        className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
+                        required
+                        aria-required="true"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        How much each member should contribute monthly.
+                      </p>
                     </div>
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                    <textarea
+                      placeholder="A brief description of the group's purpose"
+                      value={newGroup.description}
+                      onChange={(e) => setNewGroup({ ...newGroup, description: e.target.value })}
+                      className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
+                      rows="3"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Describe the group's goal or rules (optional).</p>
+                  </div>
+                  {groupActionError && (
+                    <div className="text-red-600 text-sm flex items-center">
+                      <AlertCircle className="h-4 w-4 mr-2" />
+                      {groupActionError}
+                    </div>
+                  )}
+                  <div className="flex justify-end space-x-4 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowCreateGroup(false);
+                        setNewGroup({ name: '', description: '', targetAmount: '', monthlyContribution: '' });
+                      }}
+                      className="px-6 py-2.5 rounded-lg bg-gray-200 text-gray-800 font-semibold hover:bg-gray-300 transition"
+                      aria-label="Cancel create group"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={
+                        !newGroup.name ||
+                        !newGroup.targetAmount ||
+                        !newGroup.monthlyContribution ||
+                        Number(newGroup.targetAmount) <= 0 ||
+                        Number(newGroup.monthlyContribution) <= 0 ||
+                        isLoading
+                      }
+                      className={`px-6 py-2.5 rounded-lg font-semibold transition ${
+                        !newGroup.name ||
+                        !newGroup.targetAmount ||
+                        !newGroup.monthlyContribution ||
+                        Number(newGroup.targetAmount) <= 0 ||
+                        Number(newGroup.monthlyContribution) <= 0 ||
+                        isLoading
+                          ? 'bg-green-300 text-white cursor-not-allowed'
+                          : 'bg-green-600 text-white hover:bg-green-700 hover:scale-105 shadow-sm'
+                      }`}
+                      aria-label="Create group"
+                    >
+                      {isLoading ? (
+                        <span className="flex items-center">
+                          <Loader2 className="animate-spin h-4 w-4 mr-2" />
+                          Creating...
+                        </span>
+                      ) : (
+                        'Create Group'
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+          
+          {showJoinGroup && (
+            <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 transition-opacity duration-300">
+              <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md transform transition-all duration-300">
+                <div className="flex justify-between items-center mb-6">
+                  <div className="flex items-center">
+                    <LogIn className="h-7 w-7 text-blue-600 mr-3" />
+                    <h3 className="text-2xl font-bold text-gray-800">Join an Existing Group</h3>
+                  </div>
+                  <button
+                    onClick={() => setShowJoinGroup(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                    aria-label="Close join group modal"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
+                <form className="space-y-5" onSubmit={handleJoinGroup}>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Invite Code</label>
+                    <input
+                      type="text"
+                      placeholder="Enter the invite code you received"
+                      value={joinGroupId}
+                      onChange={(e) => setJoinGroupId(e.target.value)}
+                      className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
+                      required
+                      aria-required="true"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Paste the invite code you received from the group admin.
+                    </p>
+                  </div>
+                  {groupActionError && (
+                    <div className="text-red-600 text-sm flex items-center">
+                      <AlertCircle className="h-4 w-4 mr-2" />
+                      {groupActionError}
+                    </div>
+                  )}
+                  <div className="flex justify-end space-x-4 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowJoinGroup(false);
+                        setJoinGroupId('');
+                      }}
+                      className="px-6 py-2.5 rounded-lg bg-gray-200 text-gray-800 font-semibold hover:bg-gray-300 transition"
+                      aria-label="Cancel join group"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={!joinGroupId || isLoading}
+                      className={`px-6 py-2.5 rounded-lg font-semibold transition ${
+                        !joinGroupId || isLoading
+                          ? 'bg-blue-300 text-white cursor-not-allowed'
+                          : 'bg-blue-600 text-white hover:bg-blue-700 hover:scale-105 shadow-sm'
+                      }`}
+                      aria-label="Join group"
+                    >
+                      {isLoading ? (
+                        <span className="flex items-center">
+                          <Loader2 className="animate-spin h-4 w-4 mr-2" />
+                          Joining...
+                        </span>
+                      ) : (
+                        'Join Group'
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+          
+          {showEditMembers && (
+            <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+              <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+                <h3 className="text-xl font-bold mb-4">Edit Members</h3>
+                <div className="space-y-3">
+                  {editMembers.map((member) => (
+                    <div key={member._id} className="flex items-center justify-between">
+                      <div>{member.name || member.email || 'Unknown'}</div>
+                      <button
+                        onClick={() => handleRemoveMember(member._id)}
+                        className="text-red-600 hover:text-red-800"
+                        aria-label={`Remove ${member.name || member.email || 'member'}`}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end space-x-3 mt-4">
+                  <button
+                    onClick={() => setShowEditMembers(false)}
+                    className="px-4 py-2 rounded-lg bg-gray-200 text-gray-800 font-semibold hover:bg-gray-300 transition"
+                    aria-label="Cancel edit members"
+                  >
+                    Cancel
+                  </button>
                 </div>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+          
+          <MemberProfileModal
+            member={selectedMember}
+            open={showMemberProfileModal}
+            onClose={() => setShowMemberProfileModal(false)}
+          />
+        </main>
       </div>
     </ErrorBoundary>
   );
 };
-
-function MemberProfileModal({ member, open, onClose }) {
-  if (!open || !member) return null;
-  return (
-    <div className="fixed inset-0 z-50 bg-black bg-opacity-30 flex items-center justify-center">
-      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-xs relative">
-        <button
-          className="absolute top-2 right-2 text-gray-400 hover:text-gray-700"
-          onClick={onClose}
-          aria-label="Close member profile"
-        >
-          <X className="h-6 w-6" />
-        </button>
-        <div className="flex flex-col items-center">
-          <div className="w-16 h-16 rounded-full bg-blue-200 flex items-center justify-center text-3xl font-bold text-blue-700 mb-2">
-            {member.name
-              ? member.name
-                  .split(' ')
-                  .map((x) => x[0])
-                  .join('')
-                  .toUpperCase()
-                  .slice(0, 2)
-              : member.email
-              ? member.email[0].toUpperCase()
-              : '?'}
-          </div>
-          <div className="font-semibold text-lg mb-1">{member.name || 'User'}</div>
-          <div className="text-gray-500 text-sm mb-2">{member.email || 'N/A'}</div>
-        </div>
-        <div className="mt-4 flex justify-end">
-          <button
-            className="px-4 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-            onClick={onClose}
-            aria-label="Close member profile"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default SusuDashboard;
