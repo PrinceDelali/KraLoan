@@ -67,7 +67,7 @@ class ErrorBoundary extends React.Component {
 }
 
 // Sidebar Component
-const Sidebar = ({ activeTab, setActiveTab, setShowSettings }) => {
+const Sidebar = ({ activeTab, setActiveTab, setShowSettings, pendingRequestsCount }) => {
   const navigate = useNavigate();
 
   return (
@@ -101,6 +101,11 @@ const Sidebar = ({ activeTab, setActiveTab, setShowSettings }) => {
           >
             <item.icon className="h-5 w-5 mr-3" />
             {item.label}
+            {item.id === 'notifications' && pendingRequestsCount > 0 && (
+              <span className="ml-2 inline-block bg-yellow-400 text-white text-xs font-bold px-2 py-0.5 rounded-full animate-pulse">
+                {pendingRequestsCount}
+              </span>
+            )}
           </Link>
         ))}
       </nav>
@@ -221,6 +226,8 @@ const SusuDashboard = () => {
   const [selectedMember, setSelectedMember] = useState(null);
   const [showMemberProfileModal, setShowMemberProfileModal] = useState(false);
   const [recentActivity, setRecentActivity] = useState([]);
+  const [pendingRequestsByGroup, setPendingRequestsByGroup] = useState({});
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
 
   // Sync activeTab with URL param
   useEffect(() => {
@@ -583,6 +590,31 @@ const SusuDashboard = () => {
     };
   }, [navigate]);
 
+  useEffect(() => {
+    // Fetch pending join requests for all admin groups
+    async function fetchPendingRequests() {
+      if (!currentUser || !groups.length) return;
+      let total = 0;
+      const byGroup = {};
+      await Promise.all(
+        groups.map(async (g) => {
+          if (g.admins?.some(a => (a._id || a.id || a) === currentUser._id)) {
+            try {
+              const res = await api.getPendingRequests(g._id);
+              byGroup[g._id] = { group: g, requests: res.pendingRequests || [] };
+              total += (res.pendingRequests || []).length;
+            } catch (e) {
+              byGroup[g._id] = { group: g, requests: [] };
+            }
+          }
+        })
+      );
+      setPendingRequestsByGroup(byGroup);
+      setPendingRequestsCount(total);
+    }
+    fetchPendingRequests();
+  }, [currentUser, groups]);
+
   const totalSaved = transactions
     .filter((t) => t.type === 'contribution' && t.status === 'completed')
     .reduce((sum, t) => sum + (t.amount || 0), 0);
@@ -866,7 +898,7 @@ const SusuDashboard = () => {
     return (
       <ErrorBoundary>
         <div className="flex min-h-screen bg-gray-50">
-          <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} setShowSettings={setShowSettings} />
+          <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} setShowSettings={setShowSettings} pendingRequestsCount={pendingRequestsCount} />
           {renderSettings()}
         </div>
       </ErrorBoundary>
@@ -876,7 +908,7 @@ const SusuDashboard = () => {
   return (
     <ErrorBoundary>
       <div className="flex min-h-screen bg-gray-50">
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} setShowSettings={setShowSettings} />
+        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} setShowSettings={setShowSettings} pendingRequestsCount={pendingRequestsCount} />
         <main className="flex-1 p-4 sm:p-8">
           {activeTab === 'dashboard' && (
             <React.Fragment>
@@ -925,17 +957,18 @@ const SusuDashboard = () => {
               </div>
               {/* Admin Pending Requests and Group Directory */}
               <div className="mb-12">
-                {groups.filter(g => g.admins?.includes(currentUser?._id)).map(group => (
-                  <PendingRequestsPanel
-                    key={group._id}
-                    group={group}
-                    currentUser={currentUser}
-                    onAction={async () => {
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xl font-bold text-gray-800">Groups</h3>
+                  <button
+                    className="bg-blue-600 text-white px-3 py-1 rounded text-sm font-semibold hover:bg-blue-700"
+                    onClick={async () => {
                       const updatedGroups = await api.listGroups();
                       setGroups(updatedGroups);
                     }}
-                  />
-                ))}
+                  >
+                    Refresh
+                  </button>
+                </div>
                 <GroupDirectory
                   allGroups={groups}
                   currentUser={currentUser}
@@ -1269,6 +1302,56 @@ const SusuDashboard = () => {
           {activeTab === 'notifications' && (
             <div className="space-y-6">
               <h2 className="text-3xl font-bold text-gray-800">Notifications</h2>
+              {/* Pending join requests for admin groups */}
+              {pendingRequestsCount > 0 && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                  <h4 className="font-semibold text-yellow-800 mb-2">Pending Join Requests</h4>
+                  {Object.values(pendingRequestsByGroup).map(({ group, requests }) =>
+                    requests.length > 0 ? (
+                      <div key={group._id} className="mb-4">
+                        <div className="font-semibold text-blue-700 mb-1">{group.name}</div>
+                        <ul>
+                          {requests.map(u => (
+                            <li key={u._id || u.id} className="flex items-center justify-between mb-2">
+                              <span>{u.name || u.email}</span>
+                              <div className="flex gap-2">
+                                <button
+                                  className="px-2 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200 text-xs"
+                                  onClick={async () => {
+                                    await api.approveJoinRequest(group._id, u._id || u.id);
+                                    setPendingRequestsByGroup(prev => {
+                                      const updated = { ...prev };
+                                      updated[group._id].requests = updated[group._id].requests.filter(r => (r._id || r.id) !== (u._id || u.id));
+                                      return updated;
+                                    });
+                                    setPendingRequestsCount(prev => prev - 1);
+                                  }}
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  className="px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 text-xs"
+                                  onClick={async () => {
+                                    await api.declineJoinRequest(group._id, u._id || u.id);
+                                    setPendingRequestsByGroup(prev => {
+                                      const updated = { ...prev };
+                                      updated[group._id].requests = updated[group._id].requests.filter(r => (r._id || r.id) !== (u._id || u.id));
+                                      return updated;
+                                    });
+                                    setPendingRequestsCount(prev => prev - 1);
+                                  }}
+                                >
+                                  Decline
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null
+                  )}
+                </div>
+              )}
               <div className="space-y-4">
                 {notifications.map((notification) => (
                   <div

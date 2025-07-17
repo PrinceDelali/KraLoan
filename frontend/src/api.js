@@ -123,6 +123,7 @@ export const api = {
   editGroupMessage,
   deleteGroupMessage,
   postGroupMessageWithFile,
+  getGroupById: (id) => apiRequest(`/groups/${id}`),
 };
 
 // Group loan APIs

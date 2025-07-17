@@ -10,6 +10,8 @@ export default function GroupDetails() {
   const [group, setGroup] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [pendingCount, setPendingCount] = useState(0);
+  const [pendingLoading, setPendingLoading] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -25,6 +27,19 @@ export default function GroupDetails() {
       }
     })();
   }, [groupId]);
+
+  // Fetch pending requests count for admin
+  useEffect(() => {
+    if (!group) return;
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+    const isAdmin = group.admins.some(a => (a._id || a.id) === currentUser._id);
+    if (!isAdmin) return;
+    setPendingLoading(true);
+    api.getPendingRequests(group._id)
+      .then(res => setPendingCount((res.pendingRequests || []).length))
+      .catch(() => setPendingCount(0))
+      .finally(() => setPendingLoading(false));
+  }, [group]);
 
   if (loading) return <div className="p-12 text-center">Loading group details...</div>;
   if (error) return <div className="p-12 text-center text-red-500">{error}</div>;
@@ -82,9 +97,16 @@ export default function GroupDetails() {
           <span className="text-xs text-gray-500">Share this link to invite new members.</span>
         </div>
       )}
-      {/* Pending join requests for admins */}
+      {/* Pending join requests for admins - highlight if any */}
       {isAdmin && (
         <div className="mb-6">
+          {pendingLoading ? (
+            <div className="mb-2 text-yellow-700 text-sm">Checking for pending join requests...</div>
+          ) : pendingCount > 0 ? (
+            <div className="mb-2 bg-yellow-100 border border-yellow-300 text-yellow-800 rounded p-2 font-semibold animate-pulse">
+              You have {pendingCount} pending join request{pendingCount > 1 ? 's' : ''} to review!
+            </div>
+          ) : null}
           <PendingRequestsPanel groupId={group._id} isAdmin={isAdmin} />
         </div>
       )}

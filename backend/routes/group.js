@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { createGroup, listGroups, joinGroup, deleteGroup, removeMember, getGroupMessages, postGroupMessage, postGroupMessageWithFile, editGroupMessage, deleteGroupMessage, requestLoan, approveLoan, declineLoan, repayLoan, getLoans } = require('../controllers/groupController');
+const { createGroup, listGroups, joinGroup, deleteGroup, removeMember, getGroupMessages, postGroupMessage, postGroupMessageWithFile, editGroupMessage, deleteGroupMessage, requestLoan, approveLoan, declineLoan, repayLoan, getLoans, getGroupById } = require('../controllers/groupController');
 const upload = require('../middleware/multerConfig');
 const { getPendingRequests, approveJoinRequest, declineJoinRequest } = require('../controllers/groupController.admin.js');
 const auth = require('../middleware/authMiddleware');
@@ -9,6 +9,8 @@ const auth = require('../middleware/authMiddleware');
 router.post('/', auth, createGroup);
 // List all groups
 router.get('/', auth, listGroups);
+// Get a single group by ID (fully populated)
+router.get('/:id', auth, getGroupById);
 // Join a group
 router.post('/:id/join', auth, joinGroup);
 // Join group by invite token

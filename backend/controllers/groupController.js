@@ -160,6 +160,19 @@ exports.removeMember = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
+// Get a single group by ID with all relevant fields populated
+exports.getGroupById = async (req, res) => {
+  try {
+    const group = await Group.findById(req.params.id)
+      .populate('members', 'name email phone avatar')
+      .populate('admins', 'name email phone avatar')
+      .populate('loans.requester', 'name email phone avatar');
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+    res.json(group);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
 // --- STUBS TO FIX ROUTE ERRORS ---
 exports.getGroupMessages = async (req, res) => {
   res.status(200).json({ message: 'getGroupMessages stub' });
