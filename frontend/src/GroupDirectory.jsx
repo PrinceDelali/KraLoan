@@ -37,12 +37,6 @@ export default function GroupDirectory({ allGroups, currentUser, onJoin, joinSta
           />
         </div>
       </div>
-      {/* Debug: log group members and current user */}
-      {filteredGroups.length > 0 && (
-        <pre style={{fontSize: '10px', color: 'gray', background: '#f9f9f9', padding: 4, borderRadius: 4}}>
-          {filteredGroups.map(g => `Group: ${g.name}\nMembers: ${JSON.stringify(g.members)}\nCurrentUser: ${currentUser._id}\n`).join('\n')}
-        </pre>
-      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {filteredGroups.length > 0 ? (
           filteredGroups.map(group => {

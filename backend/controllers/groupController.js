@@ -1,7 +1,9 @@
 const Group = require('../models/Group');
 const User = require('../models/User');
+const Transaction = require('../models/Transaction');
 
 const crypto = require('crypto');
+const axios = require('axios');
 
 exports.createGroup = async (req, res) => {
   try {
@@ -168,7 +170,13 @@ exports.getGroupById = async (req, res) => {
       .populate('admins', 'name email phone avatar')
       .populate('loans.requester', 'name email phone avatar');
     if (!group) return res.status(404).json({ message: 'Group not found' });
-    res.json(group);
+
+    // Fetch all transactions for this group
+    const transactions = await Transaction.find({ group: group._id }).populate('user', 'name email avatar');
+    const groupObj = group.toObject();
+    groupObj.transactions = transactions;
+
+    res.json(groupObj);
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
@@ -197,4 +205,55 @@ exports.declineLoan = async (req, res) => {
 };
 exports.repayLoan = async (req, res) => {
   res.status(200).json({ message: 'repayLoan stub' });
+};
+
+// Handle group contribution via Paystack
+exports.contributeToGroup = async (req, res) => {
+  try {
+    const groupId = req.params.id;
+    const { amount, paystackReference } = req.body;
+    const userId = req.user.userId;
+    if (!amount || !paystackReference) {
+      return res.status(400).json({ message: 'Amount and Paystack reference are required.' });
+    }
+    // Verify payment with Paystack
+    const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
+    const verifyUrl = `https://api.paystack.co/transaction/verify/${paystackReference}`;
+    const paystackRes = await axios.get(verifyUrl, {
+      headers: { Authorization: `Bearer ${paystackSecret}` }
+    });
+    const paymentData = paystackRes.data;
+    if (!paymentData.status || paymentData.data.status !== 'success' || paymentData.data.amount / 100 !== amount) {
+      return res.status(400).json({ message: 'Payment verification failed or amount mismatch.' });
+    }
+    // Find group and check membership
+    const group = await Group.findById(groupId);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+    if (!group.members.map(m => m.toString()).includes(userId)) {
+      return res.status(403).json({ message: 'Only group members can contribute.' });
+    }
+    // Record contribution in group
+    group.contributions.push({ user: userId, amount, paystackReference });
+    await group.save();
+    // Optionally, record in Transaction model
+    const transaction = new Transaction({
+      user: userId,
+      group: groupId,
+      type: 'contribution',
+      amount,
+      status: 'completed',
+      method: 'paystack',
+      date: new Date(),
+      reason: 'Group contribution'
+    });
+    await transaction.save();
+    // Return updated group info
+    await group.populate('contributions.user', 'name email');
+    res.status(201).json({ message: 'Contribution successful', group });
+  } catch (err) {
+    if (err.response && err.response.data) {
+      return res.status(400).json({ message: 'Paystack verification failed', error: err.response.data });
+    }
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
 };

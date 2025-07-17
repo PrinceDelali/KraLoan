@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { createGroup, listGroups, joinGroup, deleteGroup, removeMember, getGroupMessages, postGroupMessage, postGroupMessageWithFile, editGroupMessage, deleteGroupMessage, requestLoan, approveLoan, declineLoan, repayLoan, getLoans, getGroupById } = require('../controllers/groupController');
+const { createGroup, listGroups, joinGroup, deleteGroup, removeMember, getGroupMessages, postGroupMessage, postGroupMessageWithFile, editGroupMessage, deleteGroupMessage, requestLoan, approveLoan, declineLoan, repayLoan, getLoans, getGroupById, contributeToGroup } = require('../controllers/groupController');
 const upload = require('../middleware/multerConfig');
 const { getPendingRequests, approveJoinRequest, declineJoinRequest } = require('../controllers/groupController.admin.js');
 const auth = require('../middleware/authMiddleware');
@@ -50,5 +50,8 @@ router.get('/:id/loans', auth, getLoans);
 router.post('/:id/loans/:loanId/approve', auth, approveLoan);
 router.post('/:id/loans/:loanId/decline', auth, declineLoan);
 router.post('/:id/loans/:loanId/repay', auth, repayLoan);
+
+// Group contribution
+router.post('/:id/contribute', auth, contributeToGroup);
 
 module.exports = router;

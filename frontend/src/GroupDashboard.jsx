@@ -3,10 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from './api';
 import GroupMessagesBoard from './components/GroupMessagesBoard';
 import GroupLoansBoard from './components/GroupLoansBoard';
+import ContributionModal from './components/ContributionModal';
 import {
   Users,
   CreditCard,
-  BarChart3,
+  BarChart as BarChartIcon,
   FileText,
   Settings as SettingsIcon,
   Bell,
@@ -30,6 +31,16 @@ import {
   MessageCircle,
 } from 'lucide-react';
 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+} from 'recharts';
+
 const SIDEBAR_TABS = [
   { id: 'overview', label: 'Overview', icon: Home },
   { id: 'members', label: 'Members', icon: Users },
@@ -39,9 +50,20 @@ const SIDEBAR_TABS = [
   { id: 'requests', label: 'Requests', icon: Bell },
   { id: 'chat', label: 'Chat/Forum', icon: MessageCircle },
   { id: 'wallet', label: 'Wallet/Account', icon: Wallet },
-  { id: 'reports', label: 'Reports', icon: BarChart3 },
+  { id: 'reports', label: 'Reports', icon: BarChartIcon },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
+
+// Helper for member avatar/initials
+function MemberAvatar({ member, size = 32 }) {
+  if (member.avatar) {
+    return <img src={member.avatar} alt={member.name || member.email} className={`rounded-full`} style={{ width: size, height: size, objectFit: 'cover' }} />;
+  }
+  const initials = (member.name || member.email || '?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  return <div className="rounded-full bg-blue-200 flex items-center justify-center font-bold text-blue-700" style={{ width: size, height: size, fontSize: size / 2 }}>{initials}</div>;
+}
+
+const PAYSTACK_PUBLIC_KEY = 'pk_live_1e438d1597ef92d47f06638eb6b04b4a60f0801d';
 
 export default function GroupDashboard() {
   const { groupId } = useParams();
@@ -51,6 +73,33 @@ export default function GroupDashboard() {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+
+  // --- Move these hooks to the top level ---
+  const [showContributeModal, setShowContributeModal] = useState(false);
+  const [contributionAmount, setContributionAmount] = useState('');
+  const [contributionLoading, setContributionLoading] = useState(false);
+  const [contributionError, setContributionError] = useState('');
+  const [contributionSuccess, setContributionSuccess] = useState('');
+
+  // Add payment method state
+  const [contributionMethod, setContributionMethod] = useState('');
+
+  // Add paystackReady state
+  const [paystackReady, setPaystackReady] = React.useState(false);
+
+  // Compute recent activity from real data
+  const recentActivity = [];
+  if (group && Array.isArray(group.transactions)) {
+    group.transactions.forEach(tx => {
+      if (tx.type === 'contribution') recentActivity.push({ type: 'contribution', ...tx });
+    });
+  }
+  if (group && Array.isArray(group.loans)) {
+    group.loans.forEach(loan => {
+      recentActivity.push({ type: 'loan', ...loan });
+    });
+  }
+  recentActivity.sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
 
   useEffect(() => {
     (async () => {
@@ -72,6 +121,32 @@ export default function GroupDashboard() {
       }
     })();
   }, [groupId, currentUser._id]);
+
+  // Improved script loader
+  React.useEffect(() => {
+    if (window.PaystackPop && window.PaystackPop.setup) {
+      setPaystackReady(true);
+      return;
+    }
+    const existingScript = document.querySelector('script[src="https://js.paystack.co/v1/inline.js"]');
+    if (existingScript) {
+      existingScript.onload = () => setPaystackReady(true);
+      if (existingScript.readyState === 'complete') setPaystackReady(true);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://js.paystack.co/v1/inline.js';
+    script.async = true;
+    script.onload = () => {
+      setPaystackReady(true);
+      console.log('[Paystack] Script loaded');
+    };
+    script.onerror = () => {
+      setPaystackReady(false);
+      console.error('[Paystack] Failed to load script');
+    };
+    document.body.appendChild(script);
+  }, []);
 
   if (loading) return <div className="p-12 text-center">Loading group dashboard...</div>;
   if (error) return <div className="p-12 text-center text-red-500">{error}</div>;
@@ -116,9 +191,57 @@ export default function GroupDashboard() {
   function renderContent() {
     switch (activeTab) {
       case 'overview':
+        // Prepare chart data
+        const contributions = Array.isArray(group.transactions) ? group.transactions.filter(tx => tx.type === 'contribution') : [];
+        const chartData = contributions.reduce((acc, tx) => {
+          const date = tx.date ? new Date(tx.date).toLocaleDateString() : 'Unknown';
+          const found = acc.find(d => d.date === date);
+          if (found) found.amount += tx.amount;
+          else acc.push({ date, amount: tx.amount });
+          return acc;
+        }, []);
         return (
-          <div className="p-8">
-            <h2 className="text-2xl font-bold mb-4">Overview</h2>
+          <div className="space-y-8">
+            {/* Make Contribution Button */}
+            <div className="flex justify-end mb-4">
+              <button
+                className="bg-blue-600 text-white px-6 py-2 rounded font-bold hover:bg-blue-700 shadow"
+                onClick={() => setShowContributeModal(true)}
+              >
+                Make Contribution
+              </button>
+            </div>
+            {/* Contribution Modal */}
+            <ContributionModal
+              open={showContributeModal}
+              onClose={() => setShowContributeModal(false)}
+              group={group}
+              user={currentUser}
+              onSuccess={updatedGroup => setGroup(updatedGroup)}
+            />
+            {/* Stats Bar */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+              <div className="bg-white rounded-xl shadow p-6 flex flex-col items-center">
+                <Users className="h-8 w-8 text-blue-600 mb-2" />
+                <div className="text-2xl font-bold text-blue-700">{group.members?.length || 0}</div>
+                <div className="text-gray-600 text-sm">Members</div>
+              </div>
+              <div className="bg-white rounded-xl shadow p-6 flex flex-col items-center">
+                <TrendingUp className="h-8 w-8 text-green-600 mb-2" />
+                <div className="text-2xl font-bold text-green-700">GHS {group.totalSavings || 0}</div>
+                <div className="text-gray-600 text-sm">Total Savings</div>
+              </div>
+              <div className="bg-white rounded-xl shadow p-6 flex flex-col items-center">
+                <DollarSign className="h-8 w-8 text-purple-600 mb-2" />
+                <div className="text-2xl font-bold text-purple-700">GHS {group.fundBalance || 0}</div>
+                <div className="text-gray-600 text-sm">Fund Balance</div>
+              </div>
+              <div className="bg-white rounded-xl shadow p-6 flex flex-col items-center">
+                <CreditCard className="h-8 w-8 text-yellow-600 mb-2" />
+                <div className="text-2xl font-bold text-yellow-700">{group.activeLoans || 0}</div>
+                <div className="text-gray-600 text-sm">Active Loans</div>
+              </div>
+            </div>
             {/* Group Name & Logo */}
             <div className="flex items-center gap-4 mb-8">
               <div className="w-16 h-16 rounded-full bg-blue-200 flex items-center justify-center text-3xl font-bold text-blue-700">
@@ -129,6 +252,23 @@ export default function GroupDashboard() {
                 <div className="text-3xl font-bold text-blue-800">{group.name}</div>
                 <div className="text-gray-500 text-sm">Group Overview</div>
               </div>
+            </div>
+            {/* Contributions Chart */}
+            <div className="bg-white rounded-xl shadow p-6 mb-8">
+              <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">Contributions Over Time <BarChartIcon className="h-5 w-5 text-blue-500" /></h3>
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" fontSize={12} />
+                    <YAxis fontSize={12} />
+                    <Tooltip />
+                    <Bar dataKey="amount" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="text-gray-400 text-center">No contributions yet.</div>
+              )}
             </div>
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -157,15 +297,37 @@ export default function GroupDashboard() {
                 <div className="text-gray-600">Defaulted Loans</div>
               </div>
             </div>
-            {/* Weekly/Monthly Goals/Status */}
+            {/* Goals & Status */}
             <div className="mb-8">
               <h3 className="font-semibold text-lg mb-2">Goals & Status</h3>
-              <div className="bg-white rounded-lg shadow p-4 min-h-[80px] text-gray-500">(Weekly/Monthly goals and status will appear here)</div>
+              <div className="bg-white rounded-lg shadow p-4 min-h-[80px] text-gray-700">
+                {group.targetAmount ? (
+                  <div>Group target: <b>GHS {group.targetAmount}</b>. Progress: <b>{group.totalSavings || 0} / {group.targetAmount}</b></div>
+                ) : 'No group goal set.'}
+              </div>
             </div>
             {/* Recent Activities */}
             <div className="mb-8">
               <h3 className="font-semibold text-lg mb-2">Recent Activities</h3>
-              <div className="bg-white rounded-lg shadow p-4 min-h-[80px] text-gray-500">(Recent activities like loan approvals, repayments, etc. will appear here)</div>
+              <div className="bg-white rounded-lg shadow p-4 min-h-[80px] text-gray-700">
+                {recentActivity.length > 0 ? (
+                  <ul className="divide-y divide-gray-100">
+                    {recentActivity.slice(0, 8).map((item, i) => (
+                      <li key={i} className="py-2 flex items-center gap-2">
+                        {item.type === 'contribution' ? (
+                          <span className="text-blue-700 font-semibold">[Contribution]</span>
+                        ) : (
+                          <span className="text-yellow-700 font-semibold">[Loan]</span>
+                        )}
+                        <span className="ml-2">{item.user?.name || item.user?.email || item.requester?.name || item.requester?.email || 'User'}: {item.amount ? `GHS ${item.amount}` : ''} {item.status ? `(${item.status})` : ''}</span>
+                        <span className="ml-2 text-xs text-gray-400">{new Date(item.date || item.createdAt).toLocaleDateString()}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="text-gray-400">No recent activity yet.</div>
+                )}
+              </div>
             </div>
           </div>
         );
@@ -211,7 +373,10 @@ export default function GroupDashboard() {
                     // You may want to fetch contributions/loans/repayment per member from backend in future
                     return (
                       <tr key={m._id || m.id} className="border-b hover:bg-blue-50">
-                        <td className="px-4 py-2 font-medium text-gray-800 cursor-pointer" onClick={() => alert('Member profile modal coming soon!')}>{m.name || m.email}</td>
+                        <td className="px-4 py-2 font-medium text-gray-800 cursor-pointer" onClick={() => alert('Member profile modal coming soon!')}>
+                          <MemberAvatar member={m} size={32} />
+                          {m.name || m.email}
+                        </td>
                         <td className="px-4 py-2 text-gray-600">{m.phone || '-'}</td>
                         <td className="px-4 py-2">
                           <span className={`px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700`}>Active</span>
@@ -386,11 +551,6 @@ export default function GroupDashboard() {
           </div>
         );
       case 'contributions':
-        const [showContributeModal, setShowContributeModal] = useState(false);
-        const [contributionAmount, setContributionAmount] = useState('');
-        const [contributionLoading, setContributionLoading] = useState(false);
-        const [contributionError, setContributionError] = useState('');
-        const [contributionSuccess, setContributionSuccess] = useState('');
         const canContribute = Array.isArray(group.members) && group.members.some(m => (m._id || m.id) === currentUser._id);
         async function handleContribute(e) {
           e.preventDefault();
@@ -415,6 +575,80 @@ export default function GroupDashboard() {
           } finally {
             setContributionLoading(false);
           }
+        }
+        const paystackKey = window.PAYSTACK_PUBLIC_KEY || 'pk_test_xxx';
+
+        async function handlePaystackPayment(e) {
+          e.preventDefault();
+          setContributionLoading(true);
+          setContributionError('');
+          setContributionSuccess('');
+          try {
+            if (!window.PaystackPop) {
+              setContributionError('Paystack is not loaded. Please refresh the page.');
+              setContributionLoading(false);
+              return;
+            }
+            const email = currentUser.email;
+            const amount = Number(contributionAmount);
+            if (!email || !amount) {
+              setContributionError('Email and amount are required.');
+              setContributionLoading(false);
+              return;
+            }
+            const paystack = window.PaystackPop.setup({
+              key: paystackKey,
+              email,
+              amount: amount * 100,
+              currency: 'GHS',
+              ref: 'KRA-' + Math.floor(Math.random() * 1000000000),
+              metadata: {
+                custom_fields: [
+                  {
+                    display_name: 'Phone Number',
+                    variable_name: 'phone',
+                    value: currentUser.phone || '',
+                  },
+                  {
+                    display_name: 'Payment Method',
+                    variable_name: 'method',
+                    value: contributionMethod,
+                  }
+                ]
+              },
+              callback: function(response) {
+                handlePaystackCallback(response);
+              },
+              onClose: function() {
+                setContributionError('Payment window closed. No charge was made.');
+                setContributionLoading(false);
+              }
+            });
+            paystack.openIframe();
+          } catch (err) {
+            setContributionError('An unexpected error occurred. See console for details.');
+            setContributionLoading(false);
+          }
+        }
+        function handlePaystackCallback(response) {
+          api.post(`/group/${groupId}/contribute`, {
+            amount: Number(contributionAmount),
+            paystackReference: response.reference,
+            method: contributionMethod,
+          })
+            .then(res => {
+              setContributionSuccess('Contribution successful!');
+              setGroup(res.group);
+              setContributionAmount('');
+              setContributionMethod('');
+              setShowContributeModal(false);
+            })
+            .catch(err => {
+              setContributionError(err.message || 'Payment succeeded but failed to record contribution.');
+            })
+            .finally(() => {
+              setContributionLoading(false);
+            });
         }
         return (
           <div className="p-8">
@@ -444,34 +678,13 @@ export default function GroupDashboard() {
               </div>
             )}
             {/* Contribution Modal */}
-            {showContributeModal && (
-              <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50">
-                <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
-                  <h3 className="text-xl font-bold mb-4">Make Contribution</h3>
-                  <form className="space-y-5" onSubmit={handleContribute}>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Amount (GHS)</label>
-                      <input
-                        type="number"
-                        min="1"
-                        placeholder="e.g. 100"
-                        value={contributionAmount}
-                        onChange={e => setContributionAmount(e.target.value)}
-                        className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition"
-                        required
-                        aria-required="true"
-                      />
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <button type="button" className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300" onClick={() => setShowContributeModal(false)}>Cancel</button>
-                      <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" disabled={contributionLoading}>
-                        {contributionLoading ? 'Processing...' : 'Contribute'}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            )}
+            <ContributionModal
+              open={showContributeModal}
+              onClose={() => setShowContributeModal(false)}
+              group={group}
+              user={currentUser}
+              onSuccess={updatedGroup => setGroup(updatedGroup)}
+            />
             {/* Contribution Schedule */}
             <div className="mb-8">
               <h3 className="font-semibold text-lg mb-2">Contribution Schedule</h3>
@@ -504,7 +717,10 @@ export default function GroupDashboard() {
                   {/* Use real group.transactions filtered by type 'contribution' */}
                   {Array.isArray(group.transactions) && group.transactions.filter(tx => tx.type === 'contribution').length > 0 ? group.transactions.filter(tx => tx.type === 'contribution').map((c, idx) => (
                     <tr key={c._id || idx} className="border-b hover:bg-blue-50">
-                      <td className="px-4 py-2">{c.user?.name || c.user?.email || 'User'}</td>
+                      <td className="px-4 py-2">
+                        <MemberAvatar member={c.user} size={32} />
+                        {c.user?.name || c.user?.email || 'User'}
+                      </td>
                       <td className="px-4 py-2">GHS {c.amount}</td>
                       <td className="px-4 py-2">{c.date ? new Date(c.date).toLocaleDateString() : '-'}</td>
                       <td className="px-4 py-2">
@@ -554,7 +770,10 @@ export default function GroupDashboard() {
                     const isPaid = r.status === 'Paid';
                     return (
                       <tr key={r._id || idx} className="border-b hover:bg-blue-50">
-                        <td className="px-4 py-2">{r.member?.name || r.member?.email || 'User'}</td>
+                        <td className="px-4 py-2">
+                          <MemberAvatar member={r.member} size={32} />
+                          {r.member?.name || r.member?.email || 'User'}
+                        </td>
                         <td className="px-4 py-2">GHS {r.amount}</td>
                         <td className="px-4 py-2">{r.dueDate ? new Date(r.dueDate).toLocaleDateString() : '-'}</td>
                         <td className="px-4 py-2">
@@ -593,11 +812,17 @@ export default function GroupDashboard() {
                 </tbody>
               </table>
             </div>
-            {/* Penalty Management Placeholder */}
-            <div className="mb-8">
-              <h3 className="font-semibold text-lg mb-2">Penalty Management</h3>
-              <div className="bg-red-50 border-l-4 border-red-400 text-red-800 p-4 rounded">(Penalty rules and management will appear here)</div>
-            </div>
+            {/* Penalty Management */}
+            {Array.isArray(group.repayments) && group.repayments.some(r => r.penalty) ? (
+              <div className="mb-8">
+                <h3 className="font-semibold text-lg mb-2">Penalty Management</h3>
+                <ul className="bg-red-50 border-l-4 border-red-400 text-red-800 p-4 rounded">
+                  {group.repayments.filter(r => r.penalty).map((r, idx) => (
+                    <li key={r._id || idx}>Penalty for {r.member?.name || r.member?.email || 'User'}: GHS {r.penalty}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
         );
       case 'requests':
@@ -605,32 +830,29 @@ export default function GroupDashboard() {
           <div className="p-8">
             <h2 className="text-2xl font-bold mb-4">Requests & Notifications</h2>
             {/* Loan Request Notifications */}
-            <div className="mb-8">
-              <h3 className="font-semibold text-lg mb-2">Loan Request Notifications</h3>
-              <div className="bg-blue-50 border-l-4 border-blue-400 text-blue-800 p-4 rounded">(Loan request notifications will appear here)</div>
-            </div>
+            {Array.isArray(group.loans) && group.loans.some(l => l.status === 'pending') ? (
+              <div className="mb-8">
+                <h3 className="font-semibold text-lg mb-2">Loan Request Notifications</h3>
+                <ul className="bg-blue-50 border-l-4 border-blue-400 text-blue-800 p-4 rounded">
+                  {group.loans.filter(l => l.status === 'pending').map((l, idx) => (
+                    <li key={l._id || idx}>{l.requester?.name || l.requester?.email || 'User'} requested GHS {l.amount}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : <div className="mb-8 text-gray-400">No loan requests yet.</div>}
             {/* Withdrawal Requests */}
-            <div className="mb-8">
-              <h3 className="font-semibold text-lg mb-2">Withdrawal Requests</h3>
-              <div className="bg-green-50 border-l-4 border-green-400 text-green-800 p-4 rounded">(Withdrawal requests will appear here)</div>
-            </div>
+            <div className="mb-8 text-gray-400">No withdrawal requests yet.</div>
             {/* System Alerts */}
-            <div className="mb-8">
-              <h3 className="font-semibold text-lg mb-2">System Alerts</h3>
-              <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded">(Low fund balance, expired payment dates, and other alerts will appear here)</div>
-            </div>
+            <div className="mb-8 text-gray-400">No system alerts yet.</div>
             {/* Group-wide Announcements */}
-            <div className="mb-8">
-              <h3 className="font-semibold text-lg mb-2">Group-wide Announcements</h3>
-              <div className="bg-purple-50 border-l-4 border-purple-400 text-purple-800 p-4 rounded">(Announcements to all group members will appear here)</div>
-            </div>
+            <div className="mb-8 text-gray-400">No announcements yet.</div>
           </div>
         );
       case 'chat':
         return (
           <div className="p-8">
             <h2 className="text-2xl font-bold mb-4">Group Chat / Forum</h2>
-            <div className="bg-blue-50 border-l-4 border-blue-400 text-blue-800 p-4 rounded">(Group chat or forum for communication will appear here)</div>
+            <div className="bg-blue-50 border-l-4 border-blue-400 text-blue-800 p-4 rounded">No messages yet.</div>
           </div>
         );
       case 'wallet':
@@ -672,21 +894,6 @@ export default function GroupDashboard() {
                   )}
                 </tbody>
               </table>
-            </div>
-            {/* Top-up Wallet */}
-            <div className="mb-8">
-              <h3 className="font-semibold text-lg mb-2">Top-up Wallet</h3>
-              <div className="bg-green-50 border-l-4 border-green-400 text-green-800 p-4 rounded">(Top-up via mobile money, card, or bank coming soon!)</div>
-            </div>
-            {/* Withdrawal Process */}
-            <div className="mb-8">
-              <h3 className="font-semibold text-lg mb-2">Withdrawal Process</h3>
-              <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded">(Withdraw to group bank or MoMo coming soon!)</div>
-            </div>
-            {/* Automated Disbursement */}
-            <div className="mb-8">
-              <h3 className="font-semibold text-lg mb-2">Automated Disbursement for Loans</h3>
-              <div className="bg-purple-50 border-l-4 border-purple-400 text-purple-800 p-4 rounded">(Automated loan disbursement coming soon!)</div>
             </div>
           </div>
         );
@@ -813,9 +1020,36 @@ export default function GroupDashboard() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       <Sidebar />
-      <main className="flex-1">{renderContent()}</main>
+      <main className="flex-1 overflow-x-auto">
+        {/* Group Banner */}
+        <div className="relative w-full h-40 bg-gradient-to-r from-blue-600 to-purple-600 flex items-center justify-between px-8 shadow-md">
+          <div className="flex items-center gap-4">
+            <div className="w-20 h-20 rounded-full bg-white flex items-center justify-center shadow-lg border-4 border-blue-200 overflow-hidden">
+              {group.logo ? (
+                <img src={group.logo} alt="Group Logo" className="w-full h-full object-cover rounded-full" />
+              ) : (
+                <span className="text-3xl font-bold text-blue-700">{group.name[0]}</span>
+              )}
+            </div>
+            <div>
+              <div className="text-3xl font-extrabold text-white drop-shadow-lg">{group.name}</div>
+              <div className="text-white/80 text-sm mt-1">{group.description}</div>
+            </div>
+          </div>
+          <button
+            className="flex items-center gap-2 bg-white/80 hover:bg-white text-blue-700 font-semibold px-4 py-2 rounded-lg shadow transition-all"
+            onClick={() => navigate('/dashboard/savings')}
+          >
+            <ArrowLeft className="h-5 w-5" /> Back to My Groups
+          </button>
+        </div>
+        {/* Main Content */}
+        <div className="max-w-5xl mx-auto mt-8">
+          {renderContent()}
+        </div>
+      </main>
     </div>
   );
 } 

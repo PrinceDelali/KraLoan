@@ -40,6 +40,14 @@ const GroupSchema = new mongoose.Schema({
       updatedAt: { type: Date, default: Date.now }
     }, { _id: true })
   ],
+  contributions: [
+    new mongoose.Schema({
+      user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+      amount: { type: Number, required: true },
+      date: { type: Date, default: Date.now },
+      paystackReference: { type: String, required: true }
+    }, { _id: true })
+  ],
 }, { timestamps: true });
 
 module.exports = mongoose.model('Group', GroupSchema);
