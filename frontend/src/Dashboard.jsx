@@ -232,6 +232,11 @@ const SusuDashboard = () => {
   // Sync activeTab with URL param
   useEffect(() => {
     setActiveTab(tab || 'dashboard');
+    // If the tab is 'profile', open settings with profile tab
+    if (tab === 'profile') {
+      setShowSettings(true);
+      setSettingsTab('profile');
+    }
   }, [tab]);
 
   // Recent activity: combine group messages and loan events
@@ -538,6 +543,13 @@ const SusuDashboard = () => {
       await api.updateProfile(user.id, profileData);
       const updatedProfile = await api.getProfile(user.id);
       setProfileData(updatedProfile);
+      // Update localStorage with the new user data
+      const currentUserData = JSON.parse(localStorage.getItem('user') || '{}');
+      localStorage.setItem('user', JSON.stringify({
+        ...currentUserData,
+        ...updatedProfile,
+        id: updatedProfile._id || updatedProfile.id || currentUserData.id
+      }));
       alert('Profile updated successfully!');
     } catch (err) {
       setError(err.message || 'Failed to update profile.');
@@ -1144,54 +1156,79 @@ const SusuDashboard = () => {
               
               {groups.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {groups.map((group) => (
-                    <div
-                      key={group._id}
-                      className="bg-white rounded-xl shadow-md p-6 hover:shadow-xl transition-all duration-300 transform hover:scale-105"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h3 className="text-lg font-semibold text-gray-800">{group.name}</h3>
-                          <p className="text-sm text-gray-500 mt-1">{group.description || 'No description'}</p>
-                          <div className="mt-2 text-sm text-gray-600">
-                            <span>Target: GHS {group.targetAmount || 0}</span> |{' '}
-                            <span>Monthly: GHS {group.monthlyContribution || 0}</span>
+                  {groups.map((group) => {
+                    const isAdmin = group.admins?.some(a => (a._id || a.id || a) === currentUser?._id);
+                    const isMember = group.members?.some(m => (m._id || m.id || m) === currentUser?._id);
+                    return (
+                      <div
+                        key={group._id}
+                        className="bg-white rounded-xl shadow-md p-6 hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-800">{group.name}</h3>
+                            <p className="text-sm text-gray-500 mt-1">{group.description || 'No description'}</p>
+                            <div className="mt-2 text-sm text-gray-600">
+                              <span>Target: GHS {group.targetAmount || 0}</span> |{' '}
+                              <span>Monthly: GHS {group.monthlyContribution || 0}</span>
+                            </div>
+                          </div>
+                          <div className="flex space-x-3">
+                            <button
+                              onClick={() => handleOpenEditMembers(group)}
+                              className="text-blue-600 hover:text-blue-800 transition-transform transform hover:scale-110"
+                              aria-label={`Edit members of ${group.name}`}
+                            >
+                              <Edit3 className="h-6 w-6" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteGroup(group._id);
+                              }}
+                              className="text-red-600 hover:text-red-800 transition-transform transform hover:scale-110"
+                              aria-label={`Delete ${group.name}`}
+                            >
+                              <XCircle className="h-6 w-6" />
+                            </button>
+                            {/* Leave Group button for members who are not admins */}
+                            {!isAdmin && isMember && (
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (!window.confirm('Are you sure you want to leave this group?')) return;
+                                  try {
+                                    await api.leaveGroup(group._id);
+                                    setGroups(groups.filter((g) => g._id !== group._id));
+                                    setGroupSuccessMessage('You have left the group.');
+                                    setTimeout(() => setGroupSuccessMessage(''), 4000);
+                                  } catch (err) {
+                                    alert(err.message || 'Failed to leave group.');
+                                  }
+                                }}
+                                className="text-yellow-600 hover:text-yellow-800 transition-transform transform hover:scale-110 border border-yellow-400 rounded px-2 py-1 ml-2 text-xs font-semibold"
+                                aria-label={`Leave ${group.name}`}
+                              >
+                                Leave Group
+                              </button>
+                            )}
                           </div>
                         </div>
-                        <div className="flex space-x-3">
-                          <button
-                            onClick={() => handleOpenEditMembers(group)}
-                            className="text-blue-600 hover:text-blue-800 transition-transform transform hover:scale-110"
-                            aria-label={`Edit members of ${group.name}`}
-                          >
-                            <Edit3 className="h-6 w-6" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteGroup(group._id);
-                            }}
-                            className="text-red-600 hover:text-red-800 transition-transform transform hover:scale-110"
-                            aria-label={`Delete ${group.name}`}
-                          >
-                            <XCircle className="h-6 w-6" />
-                          </button>
+                        <div className="mt-4">
+                          <div className="text-sm font-medium text-gray-700">Members: {group.members?.length || 0}</div>
+                          <div className="w-full bg-gray-200 rounded-full h-2.5 mt-2">
+                            <div
+                              className="bg-gradient-to-r from-blue-500 to-green-500 h-2.5 rounded-full"
+                              style={{ width: `${Math.min((group.totalSaved / group.targetAmount) * 100, 100)}%` }}
+                            />
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            Saved: GHS {group.totalSaved || 0} of {group.targetAmount || 0}
+                          </div>
                         </div>
                       </div>
-                      <div className="mt-4">
-                        <div className="text-sm font-medium text-gray-700">Members: {group.members?.length || 0}</div>
-                        <div className="w-full bg-gray-200 rounded-full h-2.5 mt-2">
-                          <div
-                            className="bg-gradient-to-r from-blue-500 to-green-500 h-2.5 rounded-full"
-                            style={{ width: `${Math.min((group.totalSaved / group.targetAmount) * 100, 100)}%` }}
-                          />
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          Saved: GHS {group.totalSaved || 0} of {group.targetAmount || 0}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="bg-gradient-to-br from-blue-50 to-green-50 rounded-xl shadow-md p-8 text-center">

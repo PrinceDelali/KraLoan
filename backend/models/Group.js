@@ -48,6 +48,20 @@ const GroupSchema = new mongoose.Schema({
       paystackReference: { type: String, required: true }
     }, { _id: true })
   ],
+  payouts: [
+    new mongoose.Schema({
+      recipient: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+      amount: { type: Number, required: true },
+      phoneNumber: { type: String, required: true },
+      mobileMoneyProvider: { type: String, enum: ['MTN', 'Vodafone', 'AirtelTigo'], required: true },
+      status: { type: String, enum: ['pending', 'processing', 'completed', 'failed'], default: 'pending' },
+      paystackReference: { type: String },
+      reason: { type: String },
+      processedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+      processedAt: { type: Date, default: Date.now },
+      failureReason: { type: String }
+    }, { _id: true })
+  ],
 }, { timestamps: true });
 
 module.exports = mongoose.model('Group', GroupSchema);

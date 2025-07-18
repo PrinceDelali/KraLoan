@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Header from './Header';
+import { motion } from 'framer-motion';
 
 export default function HomePage() {
   const [isVisible, setIsVisible] = useState(false);
@@ -9,22 +10,22 @@ export default function HomePage() {
     {
       icon: "👥",
       title: "Community Savings",
-      description: "Foster trust with transparent group savings."
+      description: "Foster trust with transparent group savings and real-time collaboration."
     },
     {
       icon: "💰",
       title: "Smart Payouts",
-      description: "Automated, fair fund distribution."
+      description: "Automated, fair fund distribution with intelligent scheduling."
     },
     {
       icon: "📊",
       title: "Real-time Tracking",
-      description: "Instantly monitor contributions and progress."
+      description: "Instantly monitor contributions, progress, and financial insights."
     },
     {
       icon: "🔒",
       title: "Secure & Trusted",
-      description: "Bank-level security for your money and data."
+      description: "Bank-level security protocols protecting your money and data."
     }
   ];
 
@@ -32,71 +33,171 @@ export default function HomePage() {
     setIsVisible(true);
   }, []);
 
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white overflow-hidden">
-      {/* Background Elements */}
-      <div className="absolute inset-0">
-        <div className="absolute top-0 right-0 w-72 h-72 bg-blue-300/20 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-0 left-0 w-96 h-96 bg-teal-300/20 rounded-full blur-3xl"></div>
-      </div>
+  // Animation variants
+  const fadeUp = {
+    hidden: { opacity: 0, y: 40 },
+    visible: (i = 0) => ({
+      opacity: 1,
+      y: 0,
+      transition: {
+        delay: i * 0.15 + 0.2,
+        duration: 0.7,
+        ease: 'easeOut',
+      },
+    }),
+  };
 
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 overflow-hidden relative">
+      {/* Enhanced Background Elements */}
+      <div className="absolute inset-0">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-blue-400/30 to-purple-500/20 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-0 left-0 w-80 h-80 bg-gradient-to-tr from-teal-400/30 to-cyan-500/20 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-gradient-to-r from-indigo-400/20 to-purple-400/20 rounded-full blur-2xl"></div>
+      </div>
 
       {/* Header */}
       <Header forcePublic={true} />
 
       {/* Main Content */}
-      <main className="relative z-10 flex flex-col items-center justify-center min-h-[calc(100vh-80px)] px-4">
-        {/* Decorative Top Icon */}
-        <div className="mb-6 animate-bounce">
-          <span className="inline-block text-5xl md:text-7xl bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">💸</span>
-        </div>
-        <div className={`text-center max-w-3xl mx-auto transition-all duration-1000 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
-          {/* Hero Section */}
-          <span className="inline-block px-4 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium mb-4">
-            🌟 Modern Community Savings
-          </span>
-          <h1 className="text-3xl md:text-5xl font-bold text-gray-800 mb-6 leading-tight">
-            KraLoan Susu Savings
-          </h1>
-          <p className="text-lg md:text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
-            Join a trusted platform to manage your susu group, track contributions, and ensure transparent payouts.
-          </p>
+      <main className="relative z-10 flex flex-col items-center justify-center min-h-[calc(100vh-80px)] px-4 py-12">
+        {/* Hero Section */}
+        <motion.div
+          initial="hidden"
+          animate={isVisible ? "visible" : "hidden"}
+          variants={fadeUp}
+          className={`text-center max-w-4xl mx-auto`}
+        >
+          {/* Badge */}
+          <motion.div
+            custom={0}
+            variants={fadeUp}
+            className="inline-flex items-center px-6 py-2 bg-white/80 backdrop-blur-sm border border-blue-200/50 rounded-full text-sm font-semibold text-blue-700 mb-8 shadow-lg"
+          >
+            <span className="mr-2">🌟</span>
+            Modern Community Savings Platform
+          </motion.div>
+
+          {/* Main Heading */}
+          <motion.h1
+            custom={1}
+            variants={fadeUp}
+            className="text-4xl md:text-6xl lg:text-7xl font-bold text-gray-900 mb-6 leading-tight"
+          >
+            <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">
+              KraLoan
+            </span>
+            <br />
+            <span className="text-gray-800">Susu Savings</span>
+          </motion.h1>
+
+          {/* Subtitle */}
+          <motion.p
+            custom={2}
+            variants={fadeUp}
+            className="text-xl md:text-2xl text-gray-600 mb-12 max-w-3xl mx-auto leading-relaxed font-light"
+          >
+            Transform your community savings with our trusted platform. Manage groups, track contributions, and ensure transparent payouts with bank-level security.
+          </motion.p>
 
           {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
+          <motion.div
+            custom={3}
+            variants={fadeUp}
+            className="flex flex-col sm:flex-row gap-6 justify-center mb-16"
+          >
             <Link
               to="/register"
-              className="relative px-8 py-3 bg-blue-600 text-white rounded-lg font-semibold text-lg shadow-md hover:shadow-lg hover:bg-blue-700 transform hover:-translate-y-1 transition-all duration-300"
+              className="group relative px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold text-lg shadow-xl hover:shadow-2xl transform hover:-translate-y-1 transition-all duration-300 border-0"
             >
-              Create a Group
+              <span className="relative z-10">Create a Group</span>
+              <div className="absolute inset-0 bg-gradient-to-r from-blue-700 to-indigo-700 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
             </Link>
             <Link
               to="/login"
-              className="px-8 py-3 bg-white text-blue-600 rounded-lg font-semibold text-lg shadow-md hover:shadow-lg border border-blue-200 hover:border-blue-300 transform hover:-translate-y-1 transition-all duration-300"
+              className="group px-8 py-4 bg-white/90 backdrop-blur-sm text-gray-800 rounded-xl font-semibold text-lg shadow-xl hover:shadow-2xl border border-gray-200/50 hover:border-gray-300/50 transform hover:-translate-y-1 transition-all duration-300"
             >
               Join a Group
             </Link>
-          </div>
+          </motion.div>
+        </motion.div>
 
-          {/* Features Section */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-5xl mx-auto">
+        {/* Features Section */}
+        <div className="w-full max-w-7xl mx-auto px-4">
+          <motion.div
+            initial="hidden"
+            animate={isVisible ? "visible" : "hidden"}
+            variants={fadeUp}
+            custom={4}
+            className="text-center mb-12"
+          >
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+              Why Choose KraLoan?
+            </h2>
+            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+              Built for communities, designed for trust, and engineered for security.
+            </p>
+          </motion.div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             {features.map((feature, index) => (
-              <div
+              <motion.div
                 key={index}
-                className="p-6 bg-white rounded-xl shadow-md hover:shadow-lg transform transition-all duration-300 hover:-translate-y-1"
+                initial="hidden"
+                animate={isVisible ? "visible" : "hidden"}
+                variants={fadeUp}
+                custom={5 + index}
+                className="group p-8 bg-white/70 backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl transform hover:-translate-y-2 transition-all duration-500 border border-white/50 hover:border-blue-200/50"
               >
-                <div className="text-3xl mb-3">{feature.icon}</div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-2">{feature.title}</h3>
-                <p className="text-gray-600 text-sm">{feature.description}</p>
-              </div>
+                <div className="text-4xl mb-4 group-hover:scale-110 transition-transform duration-300">
+                  {feature.icon}
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 mb-3 group-hover:text-blue-600 transition-colors duration-300">
+                  {feature.title}
+                </h3>
+                <p className="text-gray-600 leading-relaxed">
+                  {feature.description}
+                </p>
+              </motion.div>
             ))}
           </div>
         </div>
+
+        {/* Stats Section */}
+        <motion.div
+          initial="hidden"
+          animate={isVisible ? "visible" : "hidden"}
+          variants={fadeUp}
+          custom={10}
+          className="w-full max-w-4xl mx-auto mt-20 px-4"
+        >
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="text-center p-6 bg-white/50 backdrop-blur-sm rounded-xl border border-white/50">
+              <div className="text-3xl font-bold text-blue-600 mb-2">1000+</div>
+              <div className="text-gray-600">Active Groups</div>
+            </div>
+            <div className="text-center p-6 bg-white/50 backdrop-blur-sm rounded-xl border border-white/50">
+              <div className="text-3xl font-bold text-purple-600 mb-2">$2M+</div>
+              <div className="text-gray-600">Total Savings</div>
+            </div>
+            <div className="text-center p-6 bg-white/50 backdrop-blur-sm rounded-xl border border-white/50">
+              <div className="text-3xl font-bold text-indigo-600 mb-2">99.9%</div>
+              <div className="text-gray-600">Uptime</div>
+            </div>
+          </div>
+        </motion.div>
       </main>
 
-      {/* Footer */}
-      <footer className="relative z-10 py-6 text-center text-gray-500 text-sm">
-        <p>© 2025 KraLoan. Empowering communities through savings.</p>
+      {/* Enhanced Footer */}
+      <footer className="relative z-10 py-12 bg-white/80 backdrop-blur-sm border-t border-gray-200/50">
+        <div className="max-w-4xl mx-auto text-center">
+          <p className="text-gray-600 text-lg mb-4">
+            © 2025 KraLoan. Empowering communities through secure savings.
+          </p>
+          <p className="text-gray-500 text-sm">
+            Built with ❤️ for community trust and financial growth.
+          </p>
+        </div>
       </footer>
     </div>
   );

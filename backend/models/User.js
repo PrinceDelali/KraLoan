@@ -12,6 +12,14 @@ const UserSchema = new mongoose.Schema({
   groups: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Group' }],
   profileImage: { type: String }, // URL or file path to profile picture
   avatar: { type: String }, // Predefined avatar choice
+  paystackRecipients: [
+    {
+      phone: { type: String, required: true },
+      provider: { type: String, enum: ['MTN', 'Vodafone', 'AirtelTigo'], required: true },
+      recipientCode: { type: String, required: true },
+      createdAt: { type: Date, default: Date.now }
+    }
+  ]
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', UserSchema);

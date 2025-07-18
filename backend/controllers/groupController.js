@@ -162,6 +162,23 @@ exports.removeMember = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
+
+// Allow a member to leave a group themselves
+exports.leaveGroup = async (req, res) => {
+  try {
+    const group = await Group.findById(req.params.id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+    const userId = req.user.userId;
+    // Remove user from group members
+    group.members = group.members.filter(m => m.toString() !== userId);
+    await group.save();
+    // Remove group from user's group list
+    await User.findByIdAndUpdate(userId, { $pull: { groups: group._id } });
+    res.json({ message: 'You have left the group.' });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
 // Get a single group by ID with all relevant fields populated
 exports.getGroupById = async (req, res) => {
   try {
@@ -253,6 +270,209 @@ exports.contributeToGroup = async (req, res) => {
   } catch (err) {
     if (err.response && err.response.data) {
       return res.status(400).json({ message: 'Paystack verification failed', error: err.response.data });
+    }
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// Handle group payout to member via Paystack
+exports.payoutToMember = async (req, res) => {
+  try {
+    const groupId = req.params.id;
+    const { recipientId, amount, phoneNumber, mobileMoneyProvider, reason } = req.body;
+    const adminId = req.user.userId;
+
+    if (!recipientId || !amount || !phoneNumber || !mobileMoneyProvider) {
+      return res.status(400).json({ message: 'Recipient, amount, phone number, and mobile money provider are required.' });
+    }
+
+    // Validate mobile money provider
+    const validProviders = ['MTN', 'Vodafone', 'AirtelTigo'];
+    if (!validProviders.includes(mobileMoneyProvider)) {
+      return res.status(400).json({ message: 'Invalid mobile money provider. Must be MTN, Vodafone, or AirtelTigo.' });
+    }
+
+    // Find group and check admin permissions
+    const group = await Group.findById(groupId);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+    if (!group.admins.map(a => a.toString()).includes(adminId)) {
+      return res.status(403).json({ message: 'Only group admins can make payouts.' });
+    }
+    // Check if recipient is a member of the group
+    if (!group.members.map(m => m.toString()).includes(recipientId)) {
+      return res.status(403).json({ message: 'Recipient must be a member of this group.' });
+    }
+    // Check if group has sufficient funds
+    const totalContributions = group.contributions.reduce((sum, c) => sum + c.amount, 0);
+    const totalPayouts = group.payouts.filter(p => p.status === 'completed').reduce((sum, p) => sum + p.amount, 0);
+    const availableFunds = totalContributions - totalPayouts;
+    if (availableFunds < amount) {
+      return res.status(400).json({ 
+        message: 'Insufficient funds for payout.',
+        availableFunds,
+        requestedAmount: amount
+      });
+    }
+
+    // --- PAYSTACK RECIPIENT LOGIC ---
+    const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
+    let recipientUser = await User.findById(recipientId);
+    if (!recipientUser) return res.status(404).json({ message: 'Recipient user not found' });
+    let recipientCode = null;
+    if (Array.isArray(recipientUser.paystackRecipients)) {
+      const found = recipientUser.paystackRecipients.find(r => r.phone === phoneNumber && r.provider === mobileMoneyProvider);
+      if (found) recipientCode = found.recipientCode;
+    }
+    if (!recipientCode) {
+      // Create recipient on Paystack
+      const createRecipientRes = await axios.post('https://api.paystack.co/transferrecipient', {
+        type: 'mobile_money',
+        name: recipientUser.name,
+        account_number: phoneNumber,
+        bank_code: mobileMoneyProvider === 'MTN' ? 'MPS' : mobileMoneyProvider === 'Vodafone' ? 'VOD' : 'ATL',
+        currency: 'GHS',
+        metadata: { userId: recipientUser._id.toString() }
+      }, {
+        headers: { Authorization: `Bearer ${paystackSecret}` }
+      });
+      if (!createRecipientRes.data.status) {
+        return res.status(400).json({ message: 'Failed to create Paystack recipient', error: createRecipientRes.data.message });
+      }
+      recipientCode = createRecipientRes.data.data.recipient_code;
+      // Save to user
+      recipientUser.paystackRecipients = recipientUser.paystackRecipients || [];
+      recipientUser.paystackRecipients.push({ phone: phoneNumber, provider: mobileMoneyProvider, recipientCode });
+      await recipientUser.save();
+    }
+
+    // --- INITIATE PAYSTACK TRANSFER ---
+    const transferData = {
+      source: 'balance',
+      amount: amount * 100, // Convert to kobo
+      recipient: recipientCode,
+      reason: reason || 'Group payout'
+    };
+    const transferResponse = await axios.post('https://api.paystack.co/transfer', transferData, {
+      headers: { 
+        Authorization: `Bearer ${paystackSecret}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    if (!transferResponse.data.status) {
+      return res.status(400).json({ 
+        message: 'Failed to initiate transfer',
+        error: transferResponse.data.message 
+      });
+    }
+    const transfer = transferResponse.data.data;
+    // Record payout in group
+    const payout = {
+      recipient: recipientId,
+      amount,
+      phoneNumber,
+      mobileMoneyProvider,
+      status: 'processing',
+      paystackReference: transfer.reference,
+      reason: reason || 'Group payout',
+      processedBy: adminId,
+      processedAt: new Date()
+    };
+    group.payouts.push(payout);
+    await group.save();
+    // Record transaction
+    const transaction = new Transaction({
+      user: recipientId,
+      group: groupId,
+      type: 'payout',
+      amount,
+      status: 'processing',
+      method: 'mobile_money',
+      date: new Date(),
+      reason: reason || 'Group payout'
+    });
+    await transaction.save();
+    // Return updated group info
+    await group.populate('payouts.recipient', 'name email');
+    await group.populate('payouts.processedBy', 'name email');
+    res.status(201).json({ 
+      message: 'Payout initiated successfully', 
+      payout,
+      group,
+      transferReference: transfer.reference
+    });
+  } catch (err) {
+    if (err.response && err.response.data) {
+      return res.status(400).json({ 
+        message: 'Paystack transfer failed', 
+        error: err.response.data.message || err.response.data 
+      });
+    }
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// Verify payout status
+exports.verifyPayoutStatus = async (req, res) => {
+  try {
+    const { groupId, payoutId } = req.params;
+    const adminId = req.user.userId;
+
+    // Find group and check admin permissions
+    const group = await Group.findById(groupId);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+    
+    if (!group.admins.map(a => a.toString()).includes(adminId)) {
+      return res.status(403).json({ message: 'Only group admins can verify payouts.' });
+    }
+
+    const payout = group.payouts.id(payoutId);
+    if (!payout) {
+      return res.status(404).json({ message: 'Payout not found' });
+    }
+
+    // Verify with Paystack
+    const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
+    const verifyUrl = `https://api.paystack.co/transfer/verify/${payout.paystackReference}`;
+    
+    const paystackRes = await axios.get(verifyUrl, {
+      headers: { Authorization: `Bearer ${paystackSecret}` }
+    });
+
+    const transferData = paystackRes.data.data;
+    
+    // Update payout status
+    if (transferData.status === 'success') {
+      payout.status = 'completed';
+    } else if (transferData.status === 'failed') {
+      payout.status = 'failed';
+      payout.failureReason = transferData.failure_reason || 'Transfer failed';
+    }
+
+    await group.save();
+
+    // Update transaction status
+    await Transaction.findOneAndUpdate(
+      { 
+        user: payout.recipient, 
+        group: groupId, 
+        type: 'payout',
+        paystackReference: payout.paystackReference 
+      },
+      { status: payout.status }
+    );
+
+    res.json({ 
+      message: 'Payout status updated', 
+      payout,
+      transferStatus: transferData.status 
+    });
+
+  } catch (err) {
+    if (err.response && err.response.data) {
+      return res.status(400).json({ 
+        message: 'Paystack verification failed', 
+        error: err.response.data.message || err.response.data 
+      });
     }
     res.status(500).json({ message: 'Server error', error: err.message });
   }

@@ -4,6 +4,7 @@ import { api } from './api';
 import GroupMessagesBoard from './components/GroupMessagesBoard';
 import GroupLoansBoard from './components/GroupLoansBoard';
 import ContributionModal from './components/ContributionModal';
+import PayoutModal from './components/PayoutModal';
 import {
   Users,
   CreditCard,
@@ -76,6 +77,7 @@ export default function GroupDashboard() {
 
   // --- Move these hooks to the top level ---
   const [showContributeModal, setShowContributeModal] = useState(false);
+  const [showPayoutModal, setShowPayoutModal] = useState(false);
   const [contributionAmount, setContributionAmount] = useState('');
   const [contributionLoading, setContributionLoading] = useState(false);
   const [contributionError, setContributionError] = useState('');
@@ -151,7 +153,13 @@ export default function GroupDashboard() {
   if (loading) return <div className="p-12 text-center">Loading group dashboard...</div>;
   if (error) return <div className="p-12 text-center text-red-500">{error}</div>;
 
-  const isAdmin = group.admins.includes(currentUser._id);
+  const isAdmin = group.admins.some(admin => 
+    admin._id === currentUser._id || 
+    admin._id === currentUser.id || 
+    admin === currentUser._id || 
+    admin === currentUser.id
+  );
+  console.log('DEBUG: isAdmin =', isAdmin, 'currentUser =', currentUser, 'group.admins =', group.admins);
 
   // --- Sidebar ---
   function Sidebar() {
@@ -202,14 +210,23 @@ export default function GroupDashboard() {
         }, []);
         return (
           <div className="space-y-8">
-            {/* Make Contribution Button */}
-            <div className="flex justify-end mb-4">
+            {/* Make Contribution & Payout Buttons */}
+            <div className="flex justify-end mb-4 gap-2">
               <button
                 className="bg-blue-600 text-white px-6 py-2 rounded font-bold hover:bg-blue-700 shadow"
                 onClick={() => setShowContributeModal(true)}
               >
                 Make Contribution
               </button>
+              {isAdmin && (
+                <button
+                  className="bg-green-600 text-white px-6 py-2 rounded font-bold hover:bg-green-700 shadow"
+                  onClick={() => setShowPayoutModal(true)}
+                >
+                  Payout to Member
+                </button>
+              )}
+
             </div>
             {/* Contribution Modal */}
             <ContributionModal
@@ -219,6 +236,16 @@ export default function GroupDashboard() {
               user={currentUser}
               onSuccess={updatedGroup => setGroup(updatedGroup)}
             />
+            {/* Payout Modal (admin only) */}
+            {isAdmin && (
+              <PayoutModal
+                open={showPayoutModal}
+                onClose={() => setShowPayoutModal(false)}
+                group={group}
+                user={currentUser}
+                onSuccess={updatedGroup => setGroup(updatedGroup)}
+              />
+            )}
             {/* Stats Bar */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
               <div className="bg-white rounded-xl shadow p-6 flex flex-col items-center">

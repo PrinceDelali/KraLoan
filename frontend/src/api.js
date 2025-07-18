@@ -103,10 +103,12 @@ async function deleteGroupMessage(groupId, messageId) {
 }
 
 export const api = {
+  leaveGroup: (groupId) => apiRequest(`/groups/${groupId}/leave`, { method: 'POST' }),
   deleteGroup: (id) => apiRequest(`/groups/${id}`, { method: 'DELETE' }),
   removeMember: (groupId, userId) => apiRequest(`/groups/${groupId}/remove-member`, { method: 'POST', body: JSON.stringify({ userId }) }),
   register: (data) => apiRequest('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data) => apiRequest('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+  getCurrentUser: () => apiRequest('/users/me'),
   getProfile: (id) => apiRequest(`/users/${id}`),
   updateProfile: (id, data) => apiRequest(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   createGroup: (data) => apiRequest('/groups', { method: 'POST', body: JSON.stringify(data) }),
@@ -115,6 +117,8 @@ export const api = {
   joinGroupByInviteToken: (token) => apiRequest(`/groups/invite/${token}/join`, { method: 'POST' }),
   createTransaction: (data) => apiRequest('/transactions', { method: 'POST', body: JSON.stringify(data) }),
   listTransactions: () => apiRequest('/transactions'),
+  getGroupTransactions: (groupId) => apiRequest(`/transactions/group/${groupId}`),
+  getAllGroupTransactions: (groupId) => apiRequest(`/transactions/group/${groupId}/all`),
   uploadProfileImage,
   updateAvatar,
   getPendingRequests,

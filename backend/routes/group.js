@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { createGroup, listGroups, joinGroup, deleteGroup, removeMember, getGroupMessages, postGroupMessage, postGroupMessageWithFile, editGroupMessage, deleteGroupMessage, requestLoan, approveLoan, declineLoan, repayLoan, getLoans, getGroupById, contributeToGroup } = require('../controllers/groupController');
+const { createGroup, listGroups, joinGroup, deleteGroup, removeMember, getGroupMessages, postGroupMessage, postGroupMessageWithFile, editGroupMessage, deleteGroupMessage, requestLoan, approveLoan, declineLoan, repayLoan, getLoans, getGroupById, contributeToGroup, payoutToMember, verifyPayoutStatus } = require('../controllers/groupController');
 const upload = require('../middleware/multerConfig');
 const { getPendingRequests, approveJoinRequest, declineJoinRequest } = require('../controllers/groupController.admin.js');
 const auth = require('../middleware/authMiddleware');
@@ -19,6 +19,8 @@ router.post('/invite/:token/join', auth, require('../controllers/groupController
 router.delete('/:id', auth, deleteGroup);
 // Remove a member from group (admin/creator only)
 router.post('/:id/remove-member', auth, removeMember);
+// Member leaves group
+router.post('/:id/leave', auth, require('../controllers/groupController').leaveGroup);
 
 // Admin: View pending join requests
 router.get('/:id/pending-requests', auth, getPendingRequests);
@@ -53,5 +55,9 @@ router.post('/:id/loans/:loanId/repay', auth, repayLoan);
 
 // Group contribution
 router.post('/:id/contribute', auth, contributeToGroup);
+
+// Payout management
+router.post('/:id/payouts', auth, payoutToMember);
+router.get('/:id/payouts/:payoutId/verify', auth, verifyPayoutStatus);
 
 module.exports = router;

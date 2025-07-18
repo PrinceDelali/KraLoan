@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { api } from '../api';
 
 const PAYSTACK_PUBLIC_KEY = 'pk_live_1e438d1597ef92d47f06638eb6b04b4a60f0801d';
 
@@ -7,6 +8,24 @@ export default function ContributionModal({ open, onClose, group, user, onSucces
   const [method, setMethod] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [currentUser, setCurrentUser] = useState(user || {});
+
+  // Fetch current user profile if phone number is missing
+  useEffect(() => {
+    if (open && (!currentUser.phone || !currentUser.email)) {
+      const fetchUserProfile = async () => {
+        try {
+          const userProfile = await api.getCurrentUser();
+          setCurrentUser(userProfile);
+          // Update localStorage with complete user data
+          localStorage.setItem('user', JSON.stringify(userProfile));
+        } catch (err) {
+          console.error('Failed to fetch user profile:', err);
+        }
+      };
+      fetchUserProfile();
+    }
+  }, [open, currentUser.phone, currentUser.email]);
 
   if (!open) return null;
 
@@ -53,13 +72,9 @@ export default function ContributionModal({ open, onClose, group, user, onSucces
       setLoading(false);
       return;
     }
-    // Always use the latest user info from localStorage
-    let u = user || {};
-    try {
-      u = JSON.parse(localStorage.getItem('user')) || user || {};
-    } catch (err) {}
-    let email = u.email;
-    let phone = u.phone;
+    // Use current user data
+    let email = currentUser.email;
+    let phone = currentUser.phone;
     console.log('DEBUG email:', email, 'phone:', phone);
     if (!email) {
       setError('Your email is required for payment. Please update your profile.');
@@ -67,7 +82,7 @@ export default function ContributionModal({ open, onClose, group, user, onSucces
       return;
     }
     if (!phone) {
-      setError('Your phone number is required for payment. Please update your profile.');
+      setError('Your phone number is required for payment. Please update your profile with a valid phone number.');
       setLoading(false);
       return;
     }
@@ -123,6 +138,20 @@ export default function ContributionModal({ open, onClose, group, user, onSucces
           ×
         </button>
         <h3 className="text-xl font-bold mb-4">Make Contribution</h3>
+        
+        {/* Phone number warning */}
+        {!currentUser.phone && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+            <div className="text-yellow-800 text-sm">
+              <div className="font-medium mb-1">⚠️ Phone Number Required</div>
+              <div>You need to add a phone number to your profile to make payments.</div>
+              <a href="/dashboard/profile" className="text-blue-600 underline hover:text-blue-800 font-medium mt-1 inline-block">
+                Update Profile
+              </a>
+            </div>
+          </div>
+        )}
+        
         <form className="space-y-5" onSubmit={handlePaystackPayment}>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Amount (GHS)</label>
@@ -177,8 +206,18 @@ export default function ContributionModal({ open, onClose, group, user, onSucces
             </div>
           </div>
           {error && (
-            <div className="text-red-600 text-sm flex items-center">
-              {error}
+            <div className="text-red-600 text-sm">
+              <div className="flex items-center mb-2">
+                {error}
+              </div>
+              {error.includes('phone number') && (
+                <div className="text-xs text-blue-600 space-y-1">
+                  <div>To make a contribution, you need to add a phone number to your profile.</div>
+                  <a href="/dashboard/profile" className="underline hover:text-blue-800 font-medium">
+                    Click here to update your profile
+                  </a>
+                </div>
+              )}
             </div>
           )}
           <div className="flex justify-end space-x-3 pt-2">
@@ -193,15 +232,15 @@ export default function ContributionModal({ open, onClose, group, user, onSucces
             </button>
             <button
               type="submit"
-              disabled={!amount || !method || Number(amount) <= 0 || loading}
+              disabled={!amount || !method || Number(amount) <= 0 || loading || !currentUser.phone}
               className={`px-5 py-2 rounded-lg font-semibold transition ${
-                !amount || !method || Number(amount) <= 0 || loading
+                !amount || !method || Number(amount) <= 0 || loading || !currentUser.phone
                   ? 'bg-green-300 text-white cursor-not-allowed'
                   : 'bg-green-600 text-white hover:bg-green-700 hover:scale-105 shadow-sm'
               }`}
               aria-label="Submit contribution"
             >
-              {loading ? 'Processing...' : 'Submit Contribution'}
+              {loading ? 'Processing...' : !currentUser.phone ? 'Phone Number Required' : 'Submit Contribution'}
             </button>
           </div>
         </form>
