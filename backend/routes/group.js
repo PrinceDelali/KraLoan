@@ -29,6 +29,9 @@ router.post('/:id/approve-request', auth, approveJoinRequest);
 // Admin: Decline join request
 router.post('/:id/decline-request', auth, declineJoinRequest);
 
+// Update group settings
+router.put('/:id', auth, require('../controllers/groupController').updateGroup);
+
 // Group messages (announcement board)
 router.get('/:id/messages', auth, getGroupMessages);
 // If multipart/form-data, use upload.single('file') and postGroupMessageWithFile
@@ -51,7 +54,8 @@ router.post('/:id/loans', auth, requestLoan);
 router.get('/:id/loans', auth, getLoans);
 router.post('/:id/loans/:loanId/approve', auth, approveLoan);
 router.post('/:id/loans/:loanId/decline', auth, declineLoan);
-router.post('/:id/loans/:loanId/repay', auth, repayLoan);
+// Repay a loan
+router.post('/:id/loans/:loanId/repay', auth, require('../controllers/groupController').repayLoan);
 
 // Group contribution
 router.post('/:id/contribute', auth, contributeToGroup);
@@ -59,5 +63,8 @@ router.post('/:id/contribute', auth, contributeToGroup);
 // Payout management
 router.post('/:id/payouts', auth, payoutToMember);
 router.get('/:id/payouts/:payoutId/verify', auth, verifyPayoutStatus);
+
+// Upload group logo
+router.post('/:id/logo', auth, upload.single('logo'), require('../controllers/groupController').uploadGroupLogo);
 
 module.exports = router;

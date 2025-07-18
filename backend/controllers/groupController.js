@@ -1,6 +1,7 @@
 const Group = require('../models/Group');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
+const GroupMessage = require('../models/GroupMessage');
 
 const crypto = require('crypto');
 const axios = require('axios');
@@ -198,30 +199,162 @@ exports.getGroupById = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
-// --- STUBS TO FIX ROUTE ERRORS ---
+// Get group chat history
 exports.getGroupMessages = async (req, res) => {
-  res.status(200).json({ message: 'getGroupMessages stub' });
+  try {
+    const messages = await GroupMessage.find({ group: req.params.groupId })
+      .populate('user', 'name email _id')
+      .sort({ timestamp: 1 });
+    res.json({ messages });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch group messages' });
+  }
 };
+
+// Post a new group message
+exports.postGroupMessage = async (req, res) => {
+  try {
+    const { text } = req.body;
+    const message = new GroupMessage({
+      group: req.params.groupId,
+      user: req.user._id,
+      text,
+    });
+    await message.save();
+    await message.populate('user', 'name email _id');
+    res.status(201).json({ message });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to post message' });
+  }
+};
+// --- STUBS TO FIX ROUTE ERRORS ---
 exports.editGroupMessage = async (req, res) => {
   res.status(200).json({ message: 'editGroupMessage stub' });
 };
 exports.deleteGroupMessage = async (req, res) => {
   res.status(200).json({ message: 'deleteGroupMessage stub' });
 };
+// Request a loan (member)
 exports.requestLoan = async (req, res) => {
-  res.status(200).json({ message: 'requestLoan stub' });
+  try {
+    const group = await Group.findById(req.params.id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+    // Only members can request
+    if (!group.members.map(m => m.toString()).includes(req.user.userId)) {
+      return res.status(403).json({ message: 'Only members can request loans.' });
+    }
+    const { amount, reason, duration, repaymentPlan, collateral, phone } = req.body;
+    if (!amount || amount <= 0) return res.status(400).json({ message: 'Amount required and must be > 0.' });
+    // Check for existing pending loan
+    if (group.loans.some(l => l.requester.toString() === req.user.userId && l.status === 'pending')) {
+      return res.status(400).json({ message: 'You already have a pending loan request.' });
+    }
+    // Check available funds (optional rule)
+    const totalSavings = group.contributions.reduce((sum, c) => sum + c.amount, 0);
+    const totalOutstanding = group.loans.filter(l => l.status === 'approved').reduce((sum, l) => sum + l.amount, 0);
+    const availableFunds = totalSavings - totalOutstanding;
+    if (amount > availableFunds) {
+      return res.status(400).json({ message: 'Requested amount exceeds available group funds.' });
+    }
+    // Add loan request
+    group.loans.push({
+      amount,
+      reason,
+      requester: req.user.userId,
+      status: 'pending',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      duration,
+      repaymentPlan,
+      collateral,
+      phone
+    });
+    await group.save();
+    res.status(201).json({ message: 'Loan request submitted.' });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
 };
+
+// Get all loans for a group (admin/member)
 exports.getLoans = async (req, res) => {
-  res.status(200).json({ message: 'getLoans stub' });
+  try {
+    const group = await Group.findById(req.params.id).populate('loans.requester', 'name email');
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+    // Only members/admins can view
+    if (!group.members.map(m => m.toString()).includes(req.user.userId) && !group.admins.map(a => a.toString()).includes(req.user.userId)) {
+      return res.status(403).json({ message: 'Not authorized.' });
+    }
+    res.json({ loans: group.loans });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
 };
+
+// Approve a loan (admin)
 exports.approveLoan = async (req, res) => {
-  res.status(200).json({ message: 'approveLoan stub' });
+  try {
+    const group = await Group.findById(req.params.id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+    if (!group.admins.map(a => a.toString()).includes(req.user.userId)) {
+      return res.status(403).json({ message: 'Only admins can approve loans.' });
+    }
+    const loan = group.loans.id(req.params.loanId);
+    if (!loan) return res.status(404).json({ message: 'Loan not found.' });
+    if (loan.status !== 'pending') return res.status(400).json({ message: 'Loan is not pending.' });
+    loan.status = 'approved';
+    loan.updatedAt = new Date();
+    await group.save();
+    res.json({ message: 'Loan approved.' });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
 };
+
+// Decline a loan (admin)
 exports.declineLoan = async (req, res) => {
-  res.status(200).json({ message: 'declineLoan stub' });
+  try {
+    const group = await Group.findById(req.params.id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+    if (!group.admins.map(a => a.toString()).includes(req.user.userId)) {
+      return res.status(403).json({ message: 'Only admins can decline loans.' });
+    }
+    const loan = group.loans.id(req.params.loanId);
+    if (!loan) return res.status(404).json({ message: 'Loan not found.' });
+    if (loan.status !== 'pending') return res.status(400).json({ message: 'Loan is not pending.' });
+    loan.status = 'declined';
+    loan.updatedAt = new Date();
+    await group.save();
+    res.json({ message: 'Loan declined.' });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
 };
+
+// Repay a loan (member or admin)
 exports.repayLoan = async (req, res) => {
-  res.status(200).json({ message: 'repayLoan stub' });
+  try {
+    const group = await Group.findById(req.params.id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+    const loan = group.loans.id(req.params.loanId);
+    if (!loan) return res.status(404).json({ message: 'Loan not found' });
+    // Only requester or admin can repay
+    const isAdmin = group.admins.map(a => a.toString()).includes(req.user.userId);
+    if (!isAdmin && loan.requester.toString() !== req.user.userId) {
+      return res.status(403).json({ message: 'Only the requester or an admin can record a repayment.' });
+    }
+    const { amount } = req.body;
+    if (!amount || amount <= 0) return res.status(400).json({ message: 'Amount required and must be > 0.' });
+    loan.repayments.push({ amount, date: new Date() });
+    // Optionally, mark as repaid if total repayments >= loan amount
+    const totalRepaid = loan.repayments.reduce((sum, r) => sum + (r.amount || 0), 0);
+    if (totalRepaid >= loan.amount) loan.status = 'repaid';
+    loan.updatedAt = new Date();
+    await group.save();
+    res.json({ message: 'Repayment recorded', group });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
 };
 
 // Handle group contribution via Paystack
@@ -474,6 +607,45 @@ exports.verifyPayoutStatus = async (req, res) => {
         error: err.response.data.message || err.response.data 
       });
     }
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// Update group settings (name, description, logo, monthlyContribution, loanInterest, loanLimit, schedule)
+exports.updateGroup = async (req, res) => {
+  try {
+    const group = await Group.findById(req.params.id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+    // Only allow if user is an admin
+    if (!group.admins.map(a => a.toString()).includes(req.user.userId)) {
+      return res.status(403).json({ message: 'Only an admin can update group settings.' });
+    }
+    const fields = [
+      'name', 'description', 'logo', 'monthlyContribution', 'loanInterest', 'loanLimit', 'schedule'
+    ];
+    fields.forEach(field => {
+      if (req.body[field] !== undefined) group[field] = req.body[field];
+    });
+    await group.save();
+    res.json({ message: 'Group updated', group });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+// Upload group logo
+exports.uploadGroupLogo = async (req, res) => {
+  try {
+    const group = await Group.findById(req.params.id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+    if (!group.admins.map(a => a.toString()).includes(req.user.userId)) {
+      return res.status(403).json({ message: 'Only an admin can update group logo.' });
+    }
+    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+    const logoUrl = `/uploads/${req.file.filename}`;
+    group.logo = logoUrl;
+    await group.save();
+    res.json({ message: 'Group logo updated', logo: logoUrl, group });
+  } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };

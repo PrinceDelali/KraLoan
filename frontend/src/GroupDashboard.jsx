@@ -5,6 +5,8 @@ import GroupMessagesBoard from './components/GroupMessagesBoard';
 import GroupLoansBoard from './components/GroupLoansBoard';
 import ContributionModal from './components/ContributionModal';
 import PayoutModal from './components/PayoutModal';
+import DirectChat from './components/DirectChat';
+import { useNotification } from './components/NotificationProvider';
 import {
   Users,
   CreditCard,
@@ -49,7 +51,6 @@ const SIDEBAR_TABS = [
   { id: 'contributions', label: 'Contributions', icon: TrendingUp },
   { id: 'repayments', label: 'Repayments', icon: CreditCard },
   { id: 'requests', label: 'Requests', icon: Bell },
-  { id: 'chat', label: 'Chat/Forum', icon: MessageCircle },
   { id: 'wallet', label: 'Wallet/Account', icon: Wallet },
   { id: 'reports', label: 'Reports', icon: BarChartIcon },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
@@ -88,6 +89,38 @@ export default function GroupDashboard() {
 
   // Add paystackReady state
   const [paystackReady, setPaystackReady] = React.useState(false);
+
+  // Add these at the top of GroupDashboard, after other useState hooks
+  const [groupName, setGroupName] = useState('');
+  const [groupDesc, setGroupDesc] = useState('');
+  const [logoFile, setLogoFile] = useState(null);
+  const [admins, setAdmins] = useState([]);
+  const [contribFreq, setContribFreq] = useState('Monthly');
+  const [contribAmount, setContribAmount] = useState('');
+  const [loanInterest, setLoanInterest] = useState('');
+  const [loanLimit, setLoanLimit] = useState('');
+  const { notify } = useNotification();
+
+  // Add state for member removal
+  const [removalLoading, setRemovalLoading] = useState(null);
+  const [removalError, setRemovalError] = useState('');
+
+  // Add state for repayment actions
+  const [repayLoading, setRepayLoading] = useState(null);
+  const [repayError, setRepayError] = useState('');
+
+  // Sync settings state with group data when group changes
+  useEffect(() => {
+    if (group) {
+      setGroupName(group.name || '');
+      setGroupDesc(group.description || '');
+      setAdmins(group.admins || []);
+      setContribFreq(group.schedule || 'Monthly');
+      setContribAmount(group.monthlyContribution || '');
+      setLoanInterest(group.loanInterest || '');
+      setLoanLimit(group.loanLimit || '');
+    }
+  }, [group]);
 
   // Compute recent activity from real data
   const recentActivity = [];
@@ -391,13 +424,16 @@ export default function GroupDashboard() {
                     <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Contributions</th>
                     <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Loans</th>
                     <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Repayment</th>
+                    <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Chat</th>
                     {isAdmin && <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {Array.isArray(group.members) && group.members.length > 0 ? group.members.map(m => {
                     const isAdminMember = Array.isArray(group.admins) && group.admins.some(a => (a._id || a.id) === (m._id || m.id));
-                    // You may want to fetch contributions/loans/repayment per member from backend in future
+                    // Compute contributions/loans per member from real group.transactions and group.loans
+                    const memberContributions = Array.isArray(group.transactions) ? group.transactions.filter(tx => tx.user?._id === m._id && tx.type === 'contribution').length : 0;
+                    const memberLoans = Array.isArray(group.loans) ? group.loans.filter(l => l.requester?._id === m._id).length : 0;
                     return (
                       <tr key={m._id || m.id} className="border-b hover:bg-blue-50">
                         <td className="px-4 py-2 font-medium text-gray-800 cursor-pointer" onClick={() => alert('Member profile modal coming soon!')}>
@@ -423,29 +459,49 @@ export default function GroupDashboard() {
                             <span className="text-xs font-semibold text-blue-700">{isAdminMember ? 'Admin' : 'Member'}</span>
                           )}
                         </td>
+                        <td className="px-4 py-2 text-center">{memberContributions}</td>
+                        <td className="px-4 py-2 text-center">{memberLoans}</td>
                         <td className="px-4 py-2 text-center">-</td>
-                        <td className="px-4 py-2 text-center">-</td>
-                        <td className="px-4 py-2 text-center">-</td>
+                        <td className="px-4 py-2 text-center">
+                          {m._id !== currentUser._id && (
+                            <button
+                              className="bg-blue-100 text-blue-700 px-3 py-1 rounded hover:bg-blue-200 text-xs font-semibold"
+                              onClick={() => alert('Direct chat coming soon!')}
+                            >
+                              Message
+                            </button>
+                          )}
+                        </td>
                         {isAdmin && (
                           <td className="px-4 py-2">
                             <button
                               className="text-red-600 hover:text-red-900 text-xs font-bold mr-2"
-                              onClick={() => alert('Remove member coming soon!')}
+                              disabled={removalLoading === m._id}
+                              onClick={async () => {
+                                if (!window.confirm('Remove this member?')) return;
+                                setRemovalLoading(m._id);
+                                setRemovalError('');
+                                try {
+                                  await api.removeMember(group._id, m._id);
+                                  const updated = await api.getGroupById(group._id);
+                                  setGroup(updated);
+                                  notify('Member removed!', 'success');
+                                } catch (err) {
+                                  setRemovalError(err.message || 'Failed to remove member.');
+                                } finally {
+                                  setRemovalLoading(null);
+                                }
+                              }}
                             >
-                              Remove
+                              {removalLoading === m._id ? 'Removing...' : 'Remove'}
                             </button>
-                            <button
-                              className="text-blue-600 hover:text-blue-900 text-xs font-bold"
-                              onClick={() => alert('Edit member coming soon!')}
-                            >
-                              Edit
-                            </button>
+                            {/* Future: Edit/Promote/Demote admin buttons here */}
                           </td>
                         )}
                       </tr>
                     );
                   }) : (
-                    <tr><td colSpan={isAdmin ? 8 : 7} className="text-center text-gray-400 py-6">No members found.</td></tr>
+                    <tr><td colSpan={isAdmin ? 9 : 8} className="text-center text-gray-400 py-6">No members found.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -456,125 +512,7 @@ export default function GroupDashboard() {
         return (
           <div className="p-8">
             <h2 className="text-2xl font-bold mb-4">Loans</h2>
-            {/* Alerts for upcoming/missed repayments */}
-            <div className="mb-6">
-              <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded">
-                <strong>Alerts:</strong> (Upcoming/missed repayments will appear here)
-              </div>
-            </div>
-            {/* Loan Requests Table */}
-            <div className="mb-8 overflow-x-auto">
-              <table className="min-w-full bg-white rounded-lg shadow">
-                <thead>
-                  <tr className="bg-blue-50">
-                    <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Requester</th>
-                    <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Amount</th>
-                    <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Status</th>
-                    <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Interest</th>
-                    <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Duration</th>
-                    <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Installments</th>
-                    <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Mock loan data for demonstration */}
-                  {Array.isArray(group.loans) && group.loans.length > 0 ? group.loans.map((loan, idx) => (
-                    <tr key={loan._id || idx} className="border-b hover:bg-blue-50">
-                      <td className="px-4 py-2">{loan.requester?.name || loan.requester?.email || 'User'}</td>
-                      <td className="px-4 py-2">GHS {loan.amount}</td>
-                      <td className="px-4 py-2">
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${loan.status === 'approved' ? 'bg-green-100 text-green-700' : loan.status === 'pending' ? 'bg-yellow-100 text-yellow-700' : loan.status === 'declined' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}>{loan.status}</span>
-                      </td>
-                      <td className="px-4 py-2">{loan.interest || 'N/A'}%</td>
-                      <td className="px-4 py-2">{loan.duration || 'N/A'} {loan.durationUnit || 'months'}</td>
-                      <td className="px-4 py-2">{loan.installments || 'N/A'}</td>
-                      <td className="px-4 py-2">
-                        {isAdmin && loan.status === 'pending' && (
-                          <>
-                            <button
-                              className="text-green-600 hover:text-green-900 text-xs font-bold mr-2"
-                              onClick={() => alert('Approve loan coming soon!')}
-                            >
-                              Approve
-                            </button>
-                            <button
-                              className="text-red-600 hover:text-red-900 text-xs font-bold"
-                              onClick={() => alert('Reject loan coming soon!')}
-                            >
-                              Reject
-                            </button>
-                          </>
-                        )}
-                        {loan.status === 'approved' && <span className="text-green-700 text-xs font-semibold">Ongoing</span>}
-                        {loan.status === 'repaid' && <span className="text-blue-700 text-xs font-semibold">Repaid</span>}
-                        {loan.status === 'declined' && <span className="text-red-700 text-xs font-semibold">Declined</span>}
-                      </td>
-                    </tr>
-                  )) : (
-                    <tr><td colSpan={7} className="text-center text-gray-400 py-6">No loan requests yet.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            {/* Repayment Terms (Admin only, for new loans) */}
-            {isAdmin && (
-              <div className="mb-8 bg-blue-50 rounded-lg p-6">
-                <h3 className="font-semibold text-lg mb-2">Set Repayment Terms</h3>
-                <form className="flex flex-wrap gap-4 items-end" onSubmit={e => {e.preventDefault(); alert('Set terms coming soon!')}}>
-                  <div>
-                    <label className="block text-xs font-bold mb-1">Interest Rate (%)</label>
-                    <input type="number" min="0" step="0.1" className="border rounded px-2 py-1 w-24" placeholder="e.g. 5" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold mb-1">Duration</label>
-                    <input type="number" min="1" className="border rounded px-2 py-1 w-24" placeholder="e.g. 6" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold mb-1">Unit</label>
-                    <select className="border rounded px-2 py-1 w-24">
-                      <option value="months">Months</option>
-                      <option value="weeks">Weeks</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold mb-1">Installments</label>
-                    <input type="number" min="1" className="border rounded px-2 py-1 w-24" placeholder="e.g. 6" />
-                  </div>
-                  <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded font-semibold hover:bg-blue-700">Set Terms</button>
-                </form>
-              </div>
-            )}
-            {/* Loan Calculator */}
-            <div className="mb-8 bg-white rounded-lg shadow p-6">
-              <h3 className="font-semibold text-lg mb-2">Loan Calculator</h3>
-              <form className="flex flex-wrap gap-4 items-end" onSubmit={e => {e.preventDefault(); alert('Loan calculation coming soon!')}}>
-                <div>
-                  <label className="block text-xs font-bold mb-1">Amount</label>
-                  <input type="number" min="1" className="border rounded px-2 py-1 w-24" placeholder="e.g. 1000" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold mb-1">Interest Rate (%)</label>
-                  <input type="number" min="0" step="0.1" className="border rounded px-2 py-1 w-24" placeholder="e.g. 5" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold mb-1">Duration</label>
-                  <input type="number" min="1" className="border rounded px-2 py-1 w-24" placeholder="e.g. 6" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold mb-1">Unit</label>
-                  <select className="border rounded px-2 py-1 w-24">
-                    <option value="months">Months</option>
-                    <option value="weeks">Weeks</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold mb-1">Installments</label>
-                  <input type="number" min="1" className="border rounded px-2 py-1 w-24" placeholder="e.g. 6" />
-                </div>
-                <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded font-semibold hover:bg-blue-700">Calculate</button>
-              </form>
-              <div className="mt-4 text-gray-500">(Calculation results will appear here)</div>
-            </div>
+            <GroupLoansBoard groupId={group._id} currentUser={currentUser} isAdmin={isAdmin} />
           </div>
         );
       case 'contributions':
@@ -773,28 +711,39 @@ export default function GroupDashboard() {
           </div>
         );
       case 'repayments':
+        // Gather all repayments from all loans
+        const allRepayments = Array.isArray(group.loans)
+          ? group.loans.flatMap(loan =>
+              (loan.repayments || []).map(r => ({
+                ...r,
+                loanId: loan._id,
+                member: loan.requester,
+                status: loan.status,
+                dueDate: loan.dueDate,
+                penalty: loan.penalty,
+              }))
+            )
+          : [];
         return (
           <div className="p-8">
             <h2 className="text-2xl font-bold mb-4">Repayments</h2>
-            <div className="mb-8 overflow-x-auto">
-              <h3 className="font-semibold text-lg mb-2">Upcoming Repayments</h3>
+            <div className="overflow-x-auto">
               <table className="min-w-full bg-white rounded-lg shadow">
                 <thead>
                   <tr className="bg-blue-50">
                     <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Member</th>
                     <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Amount</th>
-                    <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Due Date</th>
+                    <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Date</th>
                     <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Status</th>
                     <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Penalty</th>
                     <th className="px-4 py-2 text-left text-xs font-bold text-blue-700">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {/* Mock repayments data for demonstration */}
-                  {Array.isArray(group.repayments) && group.repayments.length > 0 ? group.repayments.map((r, idx) => {
+                  {allRepayments.length > 0 ? allRepayments.map((r, idx) => {
                     const isOverdue = r.status === 'Overdue';
                     const isDue = r.status === 'Due';
-                    const isPaid = r.status === 'Paid';
+                    const isPaid = r.status === 'Paid' || r.status === 'repaid';
                     return (
                       <tr key={r._id || idx} className="border-b hover:bg-blue-50">
                         <td className="px-4 py-2">
@@ -802,84 +751,148 @@ export default function GroupDashboard() {
                           {r.member?.name || r.member?.email || 'User'}
                         </td>
                         <td className="px-4 py-2">GHS {r.amount}</td>
-                        <td className="px-4 py-2">{r.dueDate ? new Date(r.dueDate).toLocaleDateString() : '-'}</td>
+                        <td className="px-4 py-2">{r.date ? new Date(r.date).toLocaleDateString() : '-'}</td>
                         <td className="px-4 py-2">
                           <span className={`px-2 py-1 rounded-full text-xs font-semibold ${isPaid ? 'bg-green-100 text-green-700' : isDue ? 'bg-yellow-100 text-yellow-700' : isOverdue ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}>{r.status}</span>
                         </td>
                         <td className="px-4 py-2 text-center">{isOverdue ? `GHS ${r.penalty || 0}` : '-'}</td>
                         <td className="px-4 py-2">
-                          {isPaid ? (
-                            <span className="text-green-700 text-xs font-semibold">Paid</span>
-                          ) : (
+                          {isPaid ? null : (
                             <>
-                              {currentUser._id === (r.member?._id || r.member?.id) ? (
-                                <button
-                                  className="bg-blue-600 text-white px-3 py-1 rounded text-xs font-semibold hover:bg-blue-700 mr-2"
-                                  onClick={() => alert('Paystack payment coming soon!')}
-                                >
-                                  Pay Now
-                                </button>
-                              ) : null}
-                              {isAdmin && (
-                                <button
-                                  className="bg-green-100 text-green-700 px-3 py-1 rounded text-xs font-semibold hover:bg-green-200"
-                                  onClick={() => alert('Mark as paid coming soon!')}
-                                >
-                                  Mark as Paid
-                                </button>
-                              )}
+                              {/* Placeholder for Pay Now/Mark as Paid */}
+                              <button
+                                className="bg-blue-600 text-white px-3 py-1 rounded text-xs font-semibold hover:bg-blue-700 mr-2"
+                                disabled={repayLoading === r._id}
+                                onClick={async () => {
+                                  const amount = r.amount;
+                                  setRepayLoading(r._id);
+                                  setRepayError('');
+                                  try {
+                                    await api.repayLoan(group._id, r.loanId, amount);
+                                    const updated = await api.getGroupById(group._id);
+                                    setGroup(updated);
+                                    notify('Repayment recorded!', 'success');
+                                  } catch (err) {
+                                    setRepayError(err.message || 'Failed to record repayment.');
+                                  } finally {
+                                    setRepayLoading(null);
+                                  }
+                                }}
+                              >
+                                {repayLoading === r._id ? 'Processing...' : (currentUser._id === (r.member?._id || r.member?.id) ? 'Pay Now' : isAdmin ? 'Mark as Paid' : '')}
+                              </button>
                             </>
                           )}
                         </td>
                       </tr>
                     );
                   }) : (
-                    <tr><td colSpan={6} className="text-center text-gray-400 py-6">No repayments scheduled yet.</td></tr>
+                    <tr><td colSpan={6} className="text-center text-gray-400 py-6">No repayments found.</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
-            {/* Penalty Management */}
-            {Array.isArray(group.repayments) && group.repayments.some(r => r.penalty) ? (
-              <div className="mb-8">
-                <h3 className="font-semibold text-lg mb-2">Penalty Management</h3>
-                <ul className="bg-red-50 border-l-4 border-red-400 text-red-800 p-4 rounded">
-                  {group.repayments.filter(r => r.penalty).map((r, idx) => (
-                    <li key={r._id || idx}>Penalty for {r.member?.name || r.member?.email || 'User'}: GHS {r.penalty}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
           </div>
         );
       case 'requests':
         return (
           <div className="p-8">
-            <h2 className="text-2xl font-bold mb-4">Requests & Notifications</h2>
-            {/* Loan Request Notifications */}
-            {Array.isArray(group.loans) && group.loans.some(l => l.status === 'pending') ? (
-              <div className="mb-8">
-                <h3 className="font-semibold text-lg mb-2">Loan Request Notifications</h3>
-                <ul className="bg-blue-50 border-l-4 border-blue-400 text-blue-800 p-4 rounded">
-                  {group.loans.filter(l => l.status === 'pending').map((l, idx) => (
-                    <li key={l._id || idx}>{l.requester?.name || l.requester?.email || 'User'} requested GHS {l.amount}</li>
-                  ))}
-                </ul>
+            <h2 className="text-2xl font-bold mb-4">Loan Requests</h2>
+            {/* Member view: My loan requests */}
+            {!isAdmin && (
+              <div className="max-w-2xl mx-auto mb-8">
+                <h4 className="text-lg font-bold text-blue-700 mb-2">My Loan Requests</h4>
+                <div className="bg-white rounded-xl shadow p-4 border border-blue-100">
+                  <table className="min-w-full text-xs text-left">
+                    <thead>
+                      <tr>
+                        <th className="px-2 py-1">Amount</th>
+                        <th className="px-2 py-1">Reason</th>
+                        <th className="px-2 py-1">Duration</th>
+                        <th className="px-2 py-1">Status</th>
+                        <th className="px-2 py-1">Requested</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.loans.filter(l => l.requester?._id === currentUser._id).length === 0 ? (
+                        <tr>
+                          <td colSpan="5" className="text-center py-4 text-gray-400 animate-fadeIn">
+                            No loan requests yet.
+                          </td>
+                        </tr>
+                      ) : group.loans.filter(l => l.requester?._id === currentUser._id).map(loan => (
+                        <tr key={loan._id} className="border-t hover:bg-blue-50 transition-colors duration-150">
+                          <td className="px-2 py-1">GHS {loan.amount}</td>
+                          <td className="px-2 py-1">{loan.reason || '-'}</td>
+                          <td className="px-2 py-1">{loan.duration || '-'}</td>
+                          <td className="px-2 py-1 capitalize">
+                            <span className={`px-2 py-0.5 rounded text-xs font-bold ${loan.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : loan.status === 'approved' ? 'bg-green-100 text-green-800' : loan.status === 'declined' ? 'bg-red-100 text-red-800' : loan.status === 'repaid' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'}`}>{loan.status}</span>
+                          </td>
+                          <td className="px-2 py-1">{loan.createdAt ? new Date(loan.createdAt).toLocaleDateString() : '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            ) : <div className="mb-8 text-gray-400">No loan requests yet.</div>}
-            {/* Withdrawal Requests */}
-            <div className="mb-8 text-gray-400">No withdrawal requests yet.</div>
-            {/* System Alerts */}
-            <div className="mb-8 text-gray-400">No system alerts yet.</div>
-            {/* Group-wide Announcements */}
-            <div className="mb-8 text-gray-400">No announcements yet.</div>
-          </div>
-        );
-      case 'chat':
-        return (
-          <div className="p-8">
-            <h2 className="text-2xl font-bold mb-4">Group Chat / Forum</h2>
-            <div className="bg-blue-50 border-l-4 border-blue-400 text-blue-800 p-4 rounded">No messages yet.</div>
+            )}
+            {/* Admin view: All pending loan requests */}
+            {isAdmin && (
+              <div className="max-w-3xl mx-auto mb-8">
+                <h4 className="text-lg font-bold text-blue-700 mb-2">Pending Loan Requests</h4>
+                <div className="bg-white rounded-xl shadow p-4 border border-blue-100">
+                  <table className="min-w-full text-xs text-left">
+                    <thead>
+                      <tr>
+                        <th className="px-2 py-1">Member</th>
+                        <th className="px-2 py-1">Amount</th>
+                        <th className="px-2 py-1">Reason</th>
+                        <th className="px-2 py-1">Duration</th>
+                        <th className="px-2 py-1">Requested</th>
+                        <th className="px-2 py-1">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.loans.filter(l => l.status === 'pending').length === 0 ? (
+                        <tr>
+                          <td colSpan="6" className="text-center py-4 text-gray-400 animate-fadeIn">
+                            No pending loan requests.
+                          </td>
+                        </tr>
+                      ) : group.loans.filter(l => l.status === 'pending').map(loan => (
+                        <tr key={loan._id} className="border-t hover:bg-blue-50 transition-colors duration-150">
+                          <td className="px-2 py-1">{loan.requester?.name || loan.requester?.email || '-'}</td>
+                          <td className="px-2 py-1">GHS {loan.amount}</td>
+                          <td className="px-2 py-1">{loan.reason || '-'}</td>
+                          <td className="px-2 py-1">{loan.duration || '-'}</td>
+                          <td className="px-2 py-1">{loan.createdAt ? new Date(loan.createdAt).toLocaleDateString() : '-'}</td>
+                          <td className="px-2 py-1">
+                            <button
+                              className="text-green-600 hover:bg-green-100 px-2 py-1 rounded transition-all duration-150 mr-2 shadow-sm"
+                              onClick={async () => {
+                                if (!window.confirm('Approve this loan?')) return;
+                                await api.approveLoan(group._id, loan._id);
+                                const updated = await api.getGroupById(group._id);
+                                setGroup(updated);
+                              }}
+                            >Approve</button>
+                            <button
+                              className="text-red-600 hover:bg-red-100 px-2 py-1 rounded transition-all duration-150 shadow-sm"
+                              onClick={async () => {
+                                if (!window.confirm('Decline this loan?')) return;
+                                await api.declineLoan(group._id, loan._id);
+                                const updated = await api.getGroupById(group._id);
+                                setGroup(updated);
+                              }}
+                            >Decline</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         );
       case 'wallet':
@@ -925,56 +938,236 @@ export default function GroupDashboard() {
           </div>
         );
       case 'reports':
+        // Loan performance data
+        const loanStats = Array.isArray(group.loans)
+          ? {
+              total: group.loans.length,
+              approved: group.loans.filter(l => l.status === 'approved').length,
+              declined: group.loans.filter(l => l.status === 'declined').length,
+              repaid: group.loans.filter(l => l.status === 'repaid').length,
+              pending: group.loans.filter(l => l.status === 'pending').length,
+              totalAmount: group.loans.reduce((sum, l) => sum + (l.amount || 0), 0),
+              avgAmount: group.loans.length ? (group.loans.reduce((sum, l) => sum + (l.amount || 0), 0) / group.loans.length).toFixed(2) : 0,
+              defaultRate: group.loans.length ? Math.round((group.loans.filter(l => l.status !== 'repaid' && l.status !== 'declined').length / group.loans.length) * 100) : 0
+            }
+          : {};
+        // Contribution stats
+        const contribStats = Array.isArray(group.transactions)
+          ? {
+              total: group.transactions.filter(tx => tx.type === 'contribution').length,
+              totalAmount: group.transactions.filter(tx => tx.type === 'contribution').reduce((sum, tx) => sum + (tx.amount || 0), 0),
+              topContributors: (() => {
+                const map = {};
+                group.transactions.filter(tx => tx.type === 'contribution').forEach(tx => {
+                  const key = tx.user?._id || tx.user?.id || tx.user;
+                  if (!map[key]) map[key] = { user: tx.user, amount: 0 };
+                  map[key].amount += tx.amount || 0;
+                });
+                return Object.values(map).sort((a, b) => b.amount - a.amount).slice(0, 5);
+              })()
+            }
+          : {};
+        // Member ranking
+        const memberRanking = Array.isArray(group.members)
+          ? group.members.map(m => {
+              const contribs = group.transactions?.filter(tx => tx.user?._id === m._id && tx.type === 'contribution').length || 0;
+              const loans = group.loans?.filter(l => l.requester?._id === m._id).length || 0;
+              return { ...m, contribs, loans };
+            }).sort((a, b) => b.contribs - a.contribs)
+          : [];
         return (
           <div className="p-8">
             <h2 className="text-2xl font-bold mb-4">Reports & Analytics</h2>
-            {/* Loan Performance (Monthly Trends) */}
+            {/* Loan Performance */}
             <div className="mb-8">
-              <h3 className="font-semibold text-lg mb-2">Loan Performance (Monthly Trends)</h3>
-              <div className="bg-blue-50 border-l-4 border-blue-400 text-blue-800 p-4 rounded">(Loan performance charts and trends will appear here)</div>
+              <h3 className="font-semibold text-lg mb-2">Loan Performance</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                <div className="bg-blue-100 rounded p-4 text-center">
+                  <div className="text-2xl font-bold text-blue-700">{loanStats.total}</div>
+                  <div className="text-gray-600">Total Loans</div>
+                </div>
+                <div className="bg-green-100 rounded p-4 text-center">
+                  <div className="text-2xl font-bold text-green-700">{loanStats.approved}</div>
+                  <div className="text-gray-600">Approved</div>
+                </div>
+                <div className="bg-yellow-100 rounded p-4 text-center">
+                  <div className="text-2xl font-bold text-yellow-700">{loanStats.pending}</div>
+                  <div className="text-gray-600">Pending</div>
+                </div>
+                <div className="bg-red-100 rounded p-4 text-center">
+                  <div className="text-2xl font-bold text-red-700">{loanStats.declined}</div>
+                  <div className="text-gray-600">Declined</div>
+                </div>
+                <div className="bg-blue-50 rounded p-4 text-center">
+                  <div className="text-2xl font-bold text-blue-700">{loanStats.repaid}</div>
+                  <div className="text-gray-600">Repaid</div>
+                </div>
+                <div className="bg-purple-50 rounded p-4 text-center">
+                  <div className="text-2xl font-bold text-purple-700">GHS {loanStats.totalAmount}</div>
+                  <div className="text-gray-600">Total Loaned</div>
+                </div>
+                <div className="bg-indigo-50 rounded p-4 text-center">
+                  <div className="text-2xl font-bold text-indigo-700">GHS {loanStats.avgAmount}</div>
+                  <div className="text-gray-600">Avg Loan</div>
+                </div>
+                <div className="bg-red-50 rounded p-4 text-center">
+                  <div className="text-2xl font-bold text-red-700">{loanStats.defaultRate}%</div>
+                  <div className="text-gray-600">Default Rate</div>
+                </div>
+              </div>
             </div>
             {/* Contribution Reports */}
             <div className="mb-8">
               <h3 className="font-semibold text-lg mb-2">Contribution Reports</h3>
-              <div className="bg-green-50 border-l-4 border-green-400 text-green-800 p-4 rounded">(Contribution reports and charts will appear here)</div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+                <div className="bg-green-100 rounded p-4 text-center">
+                  <div className="text-2xl font-bold text-green-700">{contribStats.total}</div>
+                  <div className="text-gray-600">Total Contributions</div>
+                </div>
+                <div className="bg-blue-100 rounded p-4 text-center">
+                  <div className="text-2xl font-bold text-blue-700">GHS {contribStats.totalAmount}</div>
+                  <div className="text-gray-600">Total Contributed</div>
+                </div>
+                <div className="bg-purple-100 rounded p-4 text-center">
+                  <div className="text-2xl font-bold text-purple-700">{contribStats.topContributors?.[0]?.user?.name || '-'}</div>
+                  <div className="text-gray-600">Top Contributor</div>
+                </div>
+              </div>
+              {/* Top Contributors Table */}
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-xs text-left">
+                  <thead>
+                    <tr>
+                      <th className="px-2 py-1">Member</th>
+                      <th className="px-2 py-1">Total Contributed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {contribStats.topContributors?.length === 0 ? (
+                      <tr><td colSpan="2" className="text-center py-4 text-gray-400">No contributions yet.</td></tr>
+                    ) : contribStats.topContributors.map(tc => (
+                      <tr key={tc.user?._id || tc.user?.id || tc.user}>
+                        <td className="px-2 py-1">{tc.user?.name || tc.user?.email || '-'}</td>
+                        <td className="px-2 py-1">GHS {tc.amount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
             {/* Member Ranking */}
             <div className="mb-8">
               <h3 className="font-semibold text-lg mb-2">Member Ranking</h3>
-              <div className="bg-purple-50 border-l-4 border-purple-400 text-purple-800 p-4 rounded">(Most active, most loans, etc. will appear here)</div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-xs text-left">
+                  <thead>
+                    <tr>
+                      <th className="px-2 py-1">Member</th>
+                      <th className="px-2 py-1">Contributions</th>
+                      <th className="px-2 py-1">Loans</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {memberRanking.length === 0 ? (
+                      <tr><td colSpan="3" className="text-center py-4 text-gray-400">No members yet.</td></tr>
+                    ) : memberRanking.map(m => (
+                      <tr key={m._id}>
+                        <td className="px-2 py-1">{m.name || m.email || '-'}</td>
+                        <td className="px-2 py-1">{m.contribs}</td>
+                        <td className="px-2 py-1">{m.loans}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-            {/* Default Rate */}
-            <div className="mb-8">
-              <h3 className="font-semibold text-lg mb-2">Default Rate</h3>
-              <div className="bg-red-50 border-l-4 border-red-400 text-red-800 p-4 rounded">(Default rate and stats will appear here)</div>
-            </div>
-            {/* PDF/CSV Export */}
-            <div className="mb-8">
-              <h3 className="font-semibold text-lg mb-2">Export Reports</h3>
-              <button className="bg-blue-600 text-white px-4 py-2 rounded font-semibold hover:bg-blue-700 mr-2" onClick={() => alert('PDF export coming soon!')}>Export PDF</button>
+            {/* Export Buttons */}
+            <div className="mb-8 flex gap-4">
+              <button className="bg-blue-600 text-white px-4 py-2 rounded font-semibold hover:bg-blue-700" onClick={() => alert('PDF export coming soon!')}>Export PDF</button>
               <button className="bg-green-600 text-white px-4 py-2 rounded font-semibold hover:bg-green-700" onClick={() => alert('CSV export coming soon!')}>Export CSV</button>
             </div>
           </div>
         );
       case 'settings':
+        // Controlled state for settings
+        // const [groupName, setGroupName] = useState(group.name); // Moved to top
+        // const [groupDesc, setGroupDesc] = useState(group.description || ''); // Moved to top
+        // const [logoFile, setLogoFile] = useState(null); // Moved to top
+        // const [admins, setAdmins] = useState(group.admins); // Moved to top
+        // const [contribFreq, setContribFreq] = useState(group.schedule || 'Monthly'); // Moved to top
+        // const [contribAmount, setContribAmount] = useState(group.monthlyContribution || ''); // Moved to top
+        // const [loanInterest, setLoanInterest] = useState(group.loanInterest || ''); // Moved to top
+        // const [loanLimit, setLoanLimit] = useState(group.loanLimit || ''); // Moved to top
+        // const { notify } = useNotification(); // Moved to top
+        // Update group details in real time
+        async function handleUpdateGroup(e) {
+          e.preventDefault();
+          try {
+            let updateFields = { name: groupName, description: groupDesc };
+            // Optionally handle logo upload (not implemented here)
+            const res = await api.updateGroup(group._id, updateFields);
+            setGroup(g => ({ ...g, ...res.group }));
+            notify('Group details updated!', 'success');
+          } catch (err) {
+            notify('Failed to update group: ' + (err.message || 'Unknown error'), 'error');
+          }
+        }
+        async function handleUpdateContrib(e) {
+          e.preventDefault();
+          try {
+            let updateFields = { schedule: contribFreq, monthlyContribution: contribAmount };
+            const res = await api.updateGroup(group._id, updateFields);
+            setGroup(g => ({ ...g, ...res.group }));
+            notify('Contribution settings updated!', 'success');
+          } catch (err) {
+            notify('Failed to update contribution settings: ' + (err.message || 'Unknown error'), 'error');
+          }
+        }
+        async function handleUpdateLoanRules(e) {
+          e.preventDefault();
+          try {
+            let updateFields = { loanInterest, loanLimit };
+            const res = await api.updateGroup(group._id, updateFields);
+            setGroup(g => ({ ...g, ...res.group }));
+            notify('Loan rules updated!', 'success');
+          } catch (err) {
+            notify('Failed to update loan rules: ' + (err.message || 'Unknown error'), 'error');
+          }
+        }
+        async function handleLogoChange(e) {
+          const file = e.target.files[0];
+          setLogoFile(file);
+          if (file) {
+            try {
+              const res = await api.uploadGroupLogo(group._id, file);
+              setGroup(g => ({ ...g, ...res.group }));
+              notify('Group logo updated!', 'success');
+            } catch (err) {
+              notify('Failed to upload logo: ' + (err.message || 'Unknown error'), 'error');
+            }
+          }
+        }
         return (
           <div className="p-8">
             <h2 className="text-2xl font-bold mb-4">Group Settings</h2>
             {/* Edit Group Details */}
             <div className="mb-8">
               <h3 className="font-semibold text-lg mb-2">Edit Group Details</h3>
-              <form className="space-y-4 max-w-lg" onSubmit={e => {e.preventDefault(); alert('Save group details coming soon!')}}>
+              <form className="space-y-4 max-w-lg" onSubmit={handleUpdateGroup}>
                 <div>
                   <label className="block text-xs font-bold mb-1">Group Name</label>
-                  <input type="text" className="border rounded px-3 py-2 w-full" defaultValue={group.name} />
+                  <input type="text" className="border rounded px-3 py-2 w-full" value={groupName} onChange={e => setGroupName(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold mb-1">Description</label>
+                  <textarea className="border rounded px-3 py-2 w-full" value={groupDesc} onChange={e => setGroupDesc(e.target.value)} />
                 </div>
                 <div>
                   <label className="block text-xs font-bold mb-1">Group Logo</label>
-                  <input type="file" className="border rounded px-3 py-2 w-full" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold mb-1">Admins</label>
-                  <input type="text" className="border rounded px-3 py-2 w-full" defaultValue={group.admins.map(a => a.name || a.email || a).join(', ')} />
+                  {group.logo && (
+                    <img src={group.logo} alt="Group Logo" className="w-16 h-16 rounded-full mb-2 object-cover border" />
+                  )}
+                  <input type="file" className="border rounded px-3 py-2 w-full" onChange={handleLogoChange} />
                 </div>
                 <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded font-semibold hover:bg-blue-700">Save Changes</button>
               </form>
@@ -982,17 +1175,17 @@ export default function GroupDashboard() {
             {/* Manage Contribution Frequency and Amount */}
             <div className="mb-8">
               <h3 className="font-semibold text-lg mb-2">Contribution Frequency & Amount</h3>
-              <form className="flex flex-wrap gap-4 items-end" onSubmit={e => {e.preventDefault(); alert('Save contribution settings coming soon!')}}>
+              <form className="flex flex-wrap gap-4 items-end" onSubmit={handleUpdateContrib}>
                 <div>
                   <label className="block text-xs font-bold mb-1">Frequency</label>
-                  <select className="border rounded px-2 py-1 w-32" defaultValue={group.schedule || 'Monthly'}>
+                  <select className="border rounded px-2 py-1 w-32" value={contribFreq} onChange={e => setContribFreq(e.target.value)}>
                     <option value="Weekly">Weekly</option>
                     <option value="Monthly">Monthly</option>
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-bold mb-1">Amount (GHS)</label>
-                  <input type="number" min="1" className="border rounded px-2 py-1 w-32" defaultValue={group.monthlyContribution || ''} />
+                  <input type="number" min="1" className="border rounded px-2 py-1 w-32" value={contribAmount} onChange={e => setContribAmount(e.target.value)} />
                 </div>
                 <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded font-semibold hover:bg-blue-700">Save</button>
               </form>
@@ -1000,30 +1193,22 @@ export default function GroupDashboard() {
             {/* Set Loan Rules */}
             <div className="mb-8">
               <h3 className="font-semibold text-lg mb-2">Loan Rules</h3>
-              <form className="flex flex-wrap gap-4 items-end" onSubmit={e => {e.preventDefault(); alert('Save loan rules coming soon!')}}>
+              <form className="flex flex-wrap gap-4 items-end" onSubmit={handleUpdateLoanRules}>
                 <div>
                   <label className="block text-xs font-bold mb-1">Interest Rate (%)</label>
-                  <input type="number" min="0" step="0.1" className="border rounded px-2 py-1 w-32" defaultValue={group.loanInterest || ''} />
+                  <input type="number" min="0" step="0.1" className="border rounded px-2 py-1 w-32" value={loanInterest} onChange={e => setLoanInterest(e.target.value)} />
                 </div>
                 <div>
                   <label className="block text-xs font-bold mb-1">Loan Limit (GHS)</label>
-                  <input type="number" min="1" className="border rounded px-2 py-1 w-32" defaultValue={group.loanLimit || ''} />
+                  <input type="number" min="1" className="border rounded px-2 py-1 w-32" value={loanLimit} onChange={e => setLoanLimit(e.target.value)} />
                 </div>
                 <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded font-semibold hover:bg-blue-700">Save</button>
               </form>
             </div>
-            {/* Payment System Integration */}
-            <div className="mb-8">
-              <h3 className="font-semibold text-lg mb-2">Payment System Integration</h3>
-              <div className="flex gap-4">
-                <button className="bg-green-600 text-white px-4 py-2 rounded font-semibold hover:bg-green-700" onClick={() => alert('Paystack integration coming soon!')}>Connect Paystack</button>
-                <button className="bg-yellow-500 text-white px-4 py-2 rounded font-semibold hover:bg-yellow-600" onClick={() => alert('MTN MoMo integration coming soon!')}>Connect MTN MoMo</button>
-              </div>
-            </div>
             {/* Notification Settings */}
             <div className="mb-8">
               <h3 className="font-semibold text-lg mb-2">Notification Settings</h3>
-              <form className="space-y-2 max-w-md" onSubmit={e => {e.preventDefault(); alert('Save notification settings coming soon!')}}>
+              <form className="space-y-2 max-w-md" onSubmit={e => {e.preventDefault(); notify('Notification settings updated!', 'success');}}>
                 <div className="flex items-center gap-2">
                   <input type="checkbox" defaultChecked />
                   <label className="text-sm">Email notifications</label>

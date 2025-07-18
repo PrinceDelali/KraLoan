@@ -2,6 +2,9 @@ import React, { useEffect, useState, useRef } from 'react';
 import { api } from '../api';
 import { useNotification } from './NotificationProvider';
 import FileUploadInput from './FileUploadInput';
+import { io } from 'socket.io-client';
+
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
 
 export default function GroupMessagesBoard({ groupId, currentUser }) {
   const [messages, setMessages] = useState([]);
@@ -16,42 +19,56 @@ export default function GroupMessagesBoard({ groupId, currentUser }) {
   const [editText, setEditText] = useState('');
   const [actionLoading, setActionLoading] = useState(null);
   const bottomRef = useRef(null);
+  const socketRef = useRef(null);
+  const [typingUsers, setTypingUsers] = useState([]);
+  // Add onlineUsers state for future online status support
+  const [onlineUsers, setOnlineUsers] = useState([]);
 
   useEffect(() => {
     let isMounted = true;
-    let lastMessages = [];
-    const fetchMessages = async () => {
-      try {
-        const res = await api.getGroupMessages(groupId);
-        if (!isMounted) return;
-        // Only update if changed
-        const newMsgs = res.messages || [];
-        // Detect new message from other user
-        const prevMsgs = prevMessagesRef.current;
-        if (prevMsgs.length && newMsgs.length > prevMsgs.length) {
-          const lastMsg = newMsgs[newMsgs.length - 1];
-          if (lastMsg.user && lastMsg.user._id !== currentUser._id) {
+    setLoading(true);
+    // Fetch chat history first
+    api.getGroupMessages(groupId).then(res => {
+      if (isMounted) {
+        setMessages(res.messages || []);
+        prevMessagesRef.current = res.data.messages || [];
+      }
+    }).catch(() => {
+      if (isMounted) setError('Failed to load messages');
+    }).finally(() => setLoading(false));
+    // --- SOCKET.IO REAL-TIME ---
+    const socket = io(SOCKET_URL, { transports: ['websocket'] });
+    socketRef.current = socket;
+    socket.emit('joinRoom', { roomId: groupId, userId: currentUser._id });
+    socket.on('receiveMessage', (msg) => {
+      setMessages((prev) => [...prev, msg]);
+      if (msg.user && msg.user._id !== currentUser._id) {
             notify && notify(
-              `New message from ${lastMsg.user.name || lastMsg.user.email || 'User'}`,
+          `New message from ${msg.user.name || msg.user.email || 'User'}`,
               'info',
               5000
             );
           }
-        }
-        prevMessagesRef.current = newMsgs;
-        if (JSON.stringify(newMsgs) !== JSON.stringify(lastMessages)) {
-          setMessages(newMsgs);
-          lastMessages = newMsgs;
-        }
-      } catch (err) {
-        if (isMounted) setError('Failed to load messages');
-      }
+    });
+    // Typing indicators
+    socket.on('typing', ({ user }) => {
+      if (user._id !== currentUser._id) setTypingUsers((prev) => [...new Set([...prev, user.name || user.email || 'User'])]);
+    });
+    socket.on('stopTyping', ({ user }) => {
+      setTypingUsers((prev) => prev.filter(u => u !== (user.name || user.email || 'User')));
+    });
+    // Online status (future support)
+    socket.on('userOnline', (userId) => {
+      setOnlineUsers((prev) => [...new Set([...prev, userId])]);
+    });
+    socket.on('userOffline', (userId) => {
+      setOnlineUsers((prev) => prev.filter(id => id !== userId));
+    });
+    return () => {
+      isMounted = false;
+      socket.disconnect();
     };
-    setLoading(true);
-    fetchMessages().finally(() => setLoading(false));
-    const interval = setInterval(fetchMessages, 5000);
-    return () => { isMounted = false; clearInterval(interval); };
-  }, [groupId]);
+  }, [groupId, currentUser._id, notify]);
 
   useEffect(() => {
     if (bottomRef.current) bottomRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -62,14 +79,23 @@ export default function GroupMessagesBoard({ groupId, currentUser }) {
     if (!text.trim() && !file) return;
     setPosting(true);
     try {
+      let msgObj;
       if (file) {
         // Assume api.postGroupMessageWithFile is implemented
         await api.postGroupMessageWithFile(groupId, text, file);
+        const res = await api.getGroupMessages(groupId);
+        setMessages(res.messages || []);
+        msgObj = res.messages[res.messages.length - 1];
       } else {
+        // Optimistically emit message
+        msgObj = {
+          text,
+          user: currentUser,
+          timestamp: new Date().toISOString(),
+        };
+        socketRef.current.emit('sendMessage', { roomId: groupId, message: msgObj });
         await api.postGroupMessage(groupId, text);
       }
-      const res = await api.getGroupMessages(groupId);
-      setMessages(res.messages || []);
       setText('');
       setFile(null);
     } catch (err) {
@@ -81,6 +107,19 @@ export default function GroupMessagesBoard({ groupId, currentUser }) {
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0] || null);
+  };
+
+  // Typing event handlers
+  let typingTimeout = useRef();
+  const handleTyping = (e) => {
+    setText(e.target.value);
+    if (socketRef.current) {
+      socketRef.current.emit('typing', { roomId: groupId, user: currentUser });
+      clearTimeout(typingTimeout.current);
+      typingTimeout.current = setTimeout(() => {
+        socketRef.current.emit('stopTyping', { roomId: groupId, user: currentUser });
+      }, 1200);
+    }
   };
 
   if (loading) return <div className="my-4 text-center">Loading messages...</div>;
@@ -95,48 +134,22 @@ export default function GroupMessagesBoard({ groupId, currentUser }) {
         {messages.length === 0 && <div className="text-gray-500 text-sm">No messages yet.</div>}
         {messages.map((m, idx) => {
           const canEdit = m.user && (m.user._id === currentUser._id || isAdmin);
+          const isMe = m.user && m.user._id === currentUser._id;
+          const initials = (m.user?.name || m.user?.email || '?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+          const isOnline = onlineUsers.includes(m.user?._id);
           return (
-            <div key={m._id || idx} className={`mb-2 text-left ${m.user && m.user._id === currentUser._id ? 'text-blue-700' : 'text-gray-800'}`}>
-              <span className="font-semibold text-xs">{m.user?.name || m.user?.email || 'User'}</span>
-              <span className="mx-2 text-gray-400 text-xs">{new Date(m.timestamp).toLocaleString()}</span>
-              {editingId === m._id ? (
-                <form
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    setActionLoading(m._id + '-edit');
-                    try {
-                      await api.editGroupMessage(groupId, m._id, editText);
-                      const res = await api.getGroupMessages(groupId);
-                      setMessages(res.messages || []);
-                      setEditingId(null);
-                    } catch (err) {
-                      alert('Failed to edit message: ' + (err.message || 'Unknown error'));
-                    } finally {
-                      setActionLoading(null);
-                    }
-                  }}
-                  className="flex gap-2 mt-1"
-                >
-                  <input
-                    className="flex-1 px-2 py-1 rounded border border-blue-200 focus:outline-none"
-                    value={editText}
-                    onChange={e => setEditText(e.target.value)}
-                    disabled={actionLoading === m._id + '-edit'}
-                  />
-                  <button
-                    type="submit"
-                    className="px-2 py-1 bg-blue-600 text-white rounded text-xs"
-                    disabled={actionLoading === m._id + '-edit' || !editText.trim()}
-                  >Save</button>
-                  <button
-                    type="button"
-                    className="px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs"
-                    onClick={() => setEditingId(null)}
-                  >Cancel</button>
-                </form>
-              ) : (
-                <div className="text-sm bg-white rounded px-2 py-1 inline-block mt-1 shadow-sm">
-                  {m.text}
+            <div key={m._id || idx} className={`mb-2 flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+              <div className={`flex items-end gap-2`}>
+                {!isMe && (
+                  <div className="w-7 h-7 rounded-full bg-blue-200 flex items-center justify-center font-bold text-blue-700 text-xs relative">
+                    {initials}
+                    {isOnline && <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-green-500 border-2 border-white" />}
+                  </div>
+                )}
+                <div className={`rounded px-3 py-2 text-sm shadow ${isMe ? 'bg-blue-600 text-white' : 'bg-white text-gray-800 border'}`}>
+                  <div className="font-semibold text-xs mb-1">{m.user?.name || m.user?.email || 'User'}</div>
+                  <div>{m.text}</div>
+                  <div className="text-xs text-gray-400 mt-1 text-right">{new Date(m.timestamp).toLocaleTimeString()}</div>
                   {m.attachment && m.attachment.url && (
                     <div className="mt-2">
                       {m.attachment.mimetype && m.attachment.mimetype.startsWith('image/') ? (
@@ -182,12 +195,21 @@ export default function GroupMessagesBoard({ groupId, currentUser }) {
                     </>
                   )}
                 </div>
+                {isMe && (
+                  <div className="w-7 h-7 rounded-full bg-blue-200 flex items-center justify-center font-bold text-blue-700 text-xs relative">
+                    {initials}
+                    {isOnline && <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-green-500 border-2 border-white" />}
+                </div>
               )}
+              </div>
             </div>
           );
         })}
         <div ref={bottomRef} />
       </div>
+      {typingUsers.length > 0 && (
+        <div className="text-xs text-blue-500 mb-2">{typingUsers.join(', ')} typing...</div>
+      )}
       <form onSubmit={handlePost} className="flex flex-col gap-2 mt-2">
         <div className="flex gap-2">
           <input
@@ -195,7 +217,7 @@ export default function GroupMessagesBoard({ groupId, currentUser }) {
             className="flex-1 px-2 py-1 rounded border border-blue-200 focus:outline-none"
             placeholder="Write a message..."
             value={text}
-            onChange={e => setText(e.target.value)}
+            onChange={handleTyping}
             disabled={posting}
           />
           <button

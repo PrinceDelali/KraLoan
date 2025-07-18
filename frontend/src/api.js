@@ -102,10 +102,31 @@ async function deleteGroupMessage(groupId, messageId) {
   });
 }
 
+async function getGroupMessages(groupId) {
+  return apiRequest(`/groups/${groupId}/messages`);
+}
+
+export async function removeMember(groupId, userId) {
+  const token = localStorage.getItem('token');
+  const res = await fetch(`/api/groups/${groupId}/remove-member`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ userId }),
+  });
+  if (!res.ok) throw new Error((await res.json()).message || 'Failed to remove member');
+  return res.json();
+}
+// Stubs for admin actions
+export async function promoteAdmin(groupId, userId) { throw new Error('Not implemented'); }
+export async function demoteAdmin(groupId, userId) { throw new Error('Not implemented'); }
+
 export const api = {
   leaveGroup: (groupId) => apiRequest(`/groups/${groupId}/leave`, { method: 'POST' }),
   deleteGroup: (id) => apiRequest(`/groups/${id}`, { method: 'DELETE' }),
-  removeMember: (groupId, userId) => apiRequest(`/groups/${groupId}/remove-member`, { method: 'POST', body: JSON.stringify({ userId }) }),
+  removeMember,
   register: (data) => apiRequest('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data) => apiRequest('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   getCurrentUser: () => apiRequest('/users/me'),
@@ -127,7 +148,31 @@ export const api = {
   editGroupMessage,
   deleteGroupMessage,
   postGroupMessageWithFile,
+  getGroupMessages,
   getGroupById: (id) => apiRequest(`/groups/${id}`),
+  updateGroup: (groupId, data) => apiRequest(`/groups/${groupId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  uploadGroupLogo: async (groupId, file) => {
+    const token = localStorage.getItem('token');
+    const formData = new FormData();
+    formData.append('logo', file);
+    const res = await fetch(`${API_BASE}/groups/${groupId}/logo`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+    if (!res.ok) throw new Error((await res.json()).message || 'Failed to upload logo');
+    return res.json();
+  },
+  // Loan APIs
+  requestLoan,
+  getLoans,
+  approveLoan,
+  declineLoan,
+  repayLoan,
+  promoteAdmin,
+  demoteAdmin,
 };
 
 // Group loan APIs
@@ -150,17 +195,16 @@ async function declineLoan(groupId, loanId) {
   return apiRequest(`/groups/${groupId}/loans/${loanId}/decline`, { method: 'POST' });
 }
 
-async function repayLoan(groupId, loanId, amount) {
-  return apiRequest(`/groups/${groupId}/loans/${loanId}/repay`, {
+export async function repayLoan(groupId, loanId, amount) {
+  const token = localStorage.getItem('token');
+  const res = await fetch(`/api/groups/${groupId}/loans/${loanId}/repay`, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify({ amount }),
   });
+  if (!res.ok) throw new Error((await res.json()).message || 'Failed to record repayment');
+  return res.json();
 }
-
-export {
-  requestLoan,
-  getLoans,
-  approveLoan,
-  declineLoan,
-  repayLoan,
-};

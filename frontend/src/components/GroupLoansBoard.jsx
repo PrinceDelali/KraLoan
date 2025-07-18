@@ -8,8 +8,12 @@ export default function GroupLoansBoard({ groupId, currentUser, isAdmin }) {
   const [error, setError] = useState('');
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
+  const [duration, setDuration] = useState('');
+  const [repaymentPlan, setRepaymentPlan] = useState('monthly');
+  const [collateral, setCollateral] = useState('');
+  const [phone, setPhone] = useState(currentUser?.phone || '');
   const [submitting, setSubmitting] = useState(false);
-  const notify = useNotification();
+  const { notify } = useNotification();
 
   useEffect(() => {
     fetchLoans();
@@ -32,9 +36,13 @@ export default function GroupLoansBoard({ groupId, currentUser, isAdmin }) {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await api.requestLoan(groupId, parseFloat(amount), reason);
+      await api.requestLoan(groupId, parseFloat(amount), reason, duration, repaymentPlan, collateral, phone);
       setAmount('');
       setReason('');
+      setDuration('');
+      setRepaymentPlan('monthly');
+      setCollateral('');
+      setPhone(currentUser?.phone || '');
       fetchLoans();
       notify('Loan request submitted!', 'success');
     } catch (err) {
@@ -107,7 +115,7 @@ export default function GroupLoansBoard({ groupId, currentUser, isAdmin }) {
 
   return (
     <div className="bg-blue-50 rounded p-4 mt-6">
-      <h3 className="font-semibold text-lg mb-2">Loans</h3>
+      <h3 className="font-semibold text-lg mb-4">Loans</h3>
       {loading ? (
         <div>Loading loans...</div>
       ) : error ? (
@@ -115,35 +123,129 @@ export default function GroupLoansBoard({ groupId, currentUser, isAdmin }) {
       ) : (
         <>
           {currentUser && (
-            <form onSubmit={handleRequestLoan} className="flex gap-2 mb-4">
-              <input
-                type="number"
-                min="1"
-                step="0.01"
-                className="px-2 py-1 rounded border border-blue-200 flex-1"
-                placeholder="Loan amount (GHS)"
-                value={amount}
-                onChange={e => setAmount(e.target.value)}
-                required
-                disabled={submitting}
-              />
-              <input
-                type="text"
-                className="px-2 py-1 rounded border border-blue-200 flex-1"
-                placeholder="Reason (optional)"
-                value={reason}
-                onChange={e => setReason(e.target.value)}
-                disabled={submitting}
-              />
+            <form onSubmit={handleRequestLoan} className="max-w-lg mx-auto bg-white rounded-xl shadow-lg p-8 mb-8 flex flex-col gap-5 border border-blue-100">
+              <h4 className="text-xl font-bold text-blue-700 mb-2">Apply for a Loan</h4>
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-gray-700">Amount (GHS)</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="0.01"
+                  className="px-4 py-2 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-400 focus:outline-none text-lg"
+                  placeholder="Enter loan amount"
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  required
+                  disabled={submitting}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-gray-700">Reason</label>
+                <textarea
+                  className="px-4 py-2 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-400 focus:outline-none text-base resize-none"
+                  placeholder="Why do you need this loan?"
+                  value={reason}
+                  onChange={e => setReason(e.target.value)}
+                  rows={3}
+                  required
+                  disabled={submitting}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-gray-700">Duration (months)</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  className="px-4 py-2 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-400 focus:outline-none text-lg"
+                  placeholder="e.g. 6"
+                  value={duration}
+                  onChange={e => setDuration(e.target.value)}
+                  required
+                  disabled={submitting}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-gray-700">Repayment Plan</label>
+                <select
+                  className="px-4 py-2 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-400 focus:outline-none text-lg"
+                  value={repaymentPlan}
+                  onChange={e => setRepaymentPlan(e.target.value)}
+                  disabled={submitting}
+                >
+                  <option value="monthly">Monthly</option>
+                  <option value="weekly">Weekly</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-gray-700">Collateral (optional)</label>
+                <input
+                  type="text"
+                  className="px-4 py-2 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-400 focus:outline-none text-lg"
+                  placeholder="e.g. Car, phone, etc."
+                  value={collateral}
+                  onChange={e => setCollateral(e.target.value)}
+                  disabled={submitting}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-gray-700">Phone Number</label>
+                <input
+                  type="tel"
+                  className="px-4 py-2 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-400 focus:outline-none text-lg"
+                  placeholder="Your phone number"
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
+                  required
+                  disabled={submitting}
+                />
+              </div>
               <button
                 type="submit"
-                className="bg-blue-600 text-white px-4 py-1 rounded hover:bg-blue-700 disabled:opacity-50"
+                className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-3 rounded-lg font-semibold text-lg shadow hover:from-blue-700 hover:to-indigo-700 transition-colors disabled:opacity-50 mt-2"
                 disabled={submitting || !amount}
               >
                 {submitting ? 'Requesting...' : 'Request Loan'}
               </button>
             </form>
           )}
+          {/* My Loan Requests Section */}
+          {currentUser && (
+            <div className="max-w-2xl mx-auto mb-8">
+              <h4 className="text-lg font-bold text-blue-700 mb-2">My Loan Requests</h4>
+              <div className="bg-white rounded-xl shadow p-4 border border-blue-100">
+                <table className="min-w-full text-xs text-left">
+                  <thead>
+                    <tr>
+                      <th className="px-2 py-1">Amount</th>
+                      <th className="px-2 py-1">Reason</th>
+                      <th className="px-2 py-1">Duration</th>
+                      <th className="px-2 py-1">Status</th>
+                      <th className="px-2 py-1">Requested</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loans.filter(l => l.requester?._id === currentUser._id).length === 0 ? (
+                      <tr>
+                        <td colSpan="5" className="text-center py-4 text-gray-400 animate-fadeIn">
+                          No loan requests yet.
+                        </td>
+                      </tr>
+                    ) : loans.filter(l => l.requester?._id === currentUser._id).map(loan => (
+                      <tr key={loan._id} className="border-t hover:bg-blue-50 transition-colors duration-150">
+                        <td className="px-2 py-1">GHS {loan.amount}</td>
+                        <td className="px-2 py-1">{loan.reason || '-'}</td>
+                        <td className="px-2 py-1">{loan.duration || '-'}</td>
+                        <td className="px-2 py-1 capitalize"><StatusBadge status={loan.status} /></td>
+                        <td className="px-2 py-1">{loan.createdAt ? new Date(loan.createdAt).toLocaleDateString() : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {/* Admin Loan Review Table and All Loans Table remain as before */}
           <div className="overflow-x-auto">
             <table className="min-w-full text-xs text-left">
               <thead>
