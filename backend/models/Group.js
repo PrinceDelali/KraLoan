@@ -45,7 +45,10 @@ const GroupSchema = new mongoose.Schema({
       user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
       amount: { type: Number, required: true },
       date: { type: Date, default: Date.now },
-      paystackReference: { type: String, required: true }
+      paystackReference: { type: String, required: true },
+      status: { type: String, enum: ['pending', 'completed', 'failed'], default: 'pending' },
+      verifiedAt: { type: Date },
+      method: { type: String }
     }, { _id: true })
   ],
   payouts: [

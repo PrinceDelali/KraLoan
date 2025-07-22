@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { createGroup, listGroups, joinGroup, deleteGroup, removeMember, getGroupMessages, postGroupMessage, postGroupMessageWithFile, editGroupMessage, deleteGroupMessage, requestLoan, approveLoan, declineLoan, repayLoan, getLoans, getGroupById, contributeToGroup, payoutToMember, verifyPayoutStatus } = require('../controllers/groupController');
+const { createGroup, listGroups, joinGroup, deleteGroup, removeMember, getGroupMessages, postGroupMessage, postGroupMessageWithFile, editGroupMessage, deleteGroupMessage, requestLoan, approveLoan, declineLoan, repayLoan, getLoans, getGroupById, contributeToGroup, payoutToMember, verifyPayoutStatus, syncPaystackTransactions } = require('../controllers/groupController');
 const upload = require('../middleware/multerConfig');
 const { getPendingRequests, approveJoinRequest, declineJoinRequest } = require('../controllers/groupController.admin.js');
 const auth = require('../middleware/authMiddleware');
@@ -59,6 +59,8 @@ router.post('/:id/loans/:loanId/repay', auth, require('../controllers/groupContr
 
 // Group contribution
 router.post('/:id/contribute', auth, contributeToGroup);
+// Sync Paystack transactions
+router.post('/:id/sync-paystack', auth, syncPaystackTransactions);
 
 // Payout management
 router.post('/:id/payouts', auth, payoutToMember);

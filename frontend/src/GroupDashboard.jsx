@@ -7,6 +7,7 @@ import ContributionModal from './components/ContributionModal';
 import PayoutModal from './components/PayoutModal';
 import DirectChat from './components/DirectChat';
 import { useNotification } from './components/NotificationProvider';
+import LoadingSpinner from './components/LoadingSpinner';
 import {
   Users,
   CreditCard,
@@ -43,6 +44,8 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from 'recharts';
+
+import { io } from 'socket.io-client';
 
 const SIDEBAR_TABS = [
   { id: 'overview', label: 'Overview', icon: Home },
@@ -157,6 +160,25 @@ export default function GroupDashboard() {
     })();
   }, [groupId, currentUser._id]);
 
+  useEffect(() => {
+    // Connect to Socket.IO server
+    const socket = io('http://localhost:5000');
+    // Join the group room
+    if (groupId) {
+      socket.emit('joinRoom', { roomId: groupId, userId: currentUser._id || currentUser.id });
+    }
+    // Listen for real-time group contribution updates
+    socket.on('groupContributionUpdated', (data) => {
+      if (data.groupId === groupId) {
+        setGroup(data.group);
+      }
+    });
+    // Cleanup on unmount
+    return () => {
+      socket.disconnect();
+    };
+  }, [groupId]);
+
   // Improved script loader
   React.useEffect(() => {
     if (window.PaystackPop && window.PaystackPop.setup) {
@@ -183,7 +205,7 @@ export default function GroupDashboard() {
     document.body.appendChild(script);
   }, []);
 
-  if (loading) return <div className="p-12 text-center">Loading group dashboard...</div>;
+  if (loading) return <LoadingSpinner message="Loading group dashboard..." />;
   if (error) return <div className="p-12 text-center text-red-500">{error}</div>;
 
   const isAdmin = group.admins.some(admin => 

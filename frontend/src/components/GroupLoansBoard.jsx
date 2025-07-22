@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api';
+import LoadingDots from './LoadingDots';
 import { useNotification } from './NotificationProvider';
 
 export default function GroupLoansBoard({ groupId, currentUser, isAdmin }) {
@@ -117,7 +118,7 @@ export default function GroupLoansBoard({ groupId, currentUser, isAdmin }) {
     <div className="bg-blue-50 rounded p-4 mt-6">
       <h3 className="font-semibold text-lg mb-4">Loans</h3>
       {loading ? (
-        <div>Loading loans...</div>
+        <div className="text-center py-4"><LoadingDots variant="spiral" color="purple" /></div>
       ) : error ? (
         <div className="text-red-500">{error}</div>
       ) : (

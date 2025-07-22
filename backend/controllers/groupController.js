@@ -6,6 +6,9 @@ const GroupMessage = require('../models/GroupMessage');
 const crypto = require('crypto');
 const axios = require('axios');
 
+let io;
+exports.setIO = (ioInstance) => { io = ioInstance; };
+
 exports.createGroup = async (req, res) => {
   try {
     const { name, description, targetAmount, monthlyContribution, startDate, endDate } = req.body;
@@ -193,6 +196,8 @@ exports.getGroupById = async (req, res) => {
     const transactions = await Transaction.find({ group: group._id }).populate('user', 'name email avatar');
     const groupObj = group.toObject();
     groupObj.transactions = transactions;
+    // Calculate totalSavings
+    groupObj.totalSavings = group.contributions.filter(c => c.status === 'completed').reduce((sum, c) => sum + c.amount, 0);
 
     res.json(groupObj);
   } catch (err) {
@@ -361,7 +366,7 @@ exports.repayLoan = async (req, res) => {
 exports.contributeToGroup = async (req, res) => {
   try {
     const groupId = req.params.id;
-    const { amount, paystackReference } = req.body;
+    const { amount, paystackReference, method } = req.body;
     const userId = req.user.userId;
     if (!amount || !paystackReference) {
       return res.status(400).json({ message: 'Amount and Paystack reference are required.' });
@@ -383,7 +388,14 @@ exports.contributeToGroup = async (req, res) => {
       return res.status(403).json({ message: 'Only group members can contribute.' });
     }
     // Record contribution in group
-    group.contributions.push({ user: userId, amount, paystackReference });
+    group.contributions.push({ 
+      user: userId, 
+      amount, 
+      paystackReference,
+      status: 'completed',
+      verifiedAt: new Date(),
+      method: method || 'paystack'
+    });
     await group.save();
     // Optionally, record in Transaction model
     const transaction = new Transaction({
@@ -392,14 +404,22 @@ exports.contributeToGroup = async (req, res) => {
       type: 'contribution',
       amount,
       status: 'completed',
-      method: 'paystack',
+      method: method || 'paystack',
+      paystackReference,
       date: new Date(),
       reason: 'Group contribution'
     });
     await transaction.save();
     // Return updated group info
     await group.populate('contributions.user', 'name email');
-    res.status(201).json({ message: 'Contribution successful', group });
+    // Calculate totalSavings
+    const totalSavings = group.contributions.filter(c => c.status === 'completed').reduce((sum, c) => sum + c.amount, 0);
+    const groupObj = { ...group.toObject(), totalSavings };
+    // Emit real-time update to group members
+    if (io) {
+      io.to(group._id.toString()).emit('groupContributionUpdated', { groupId: group._id, group: groupObj });
+    }
+    res.status(201).json({ message: 'Contribution successful', group: groupObj });
   } catch (err) {
     if (err.response && err.response.data) {
       return res.status(400).json({ message: 'Paystack verification failed', error: err.response.data });
@@ -607,6 +627,85 @@ exports.verifyPayoutStatus = async (req, res) => {
         error: err.response.data.message || err.response.data 
       });
     }
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// Manual sync of Paystack transactions
+exports.syncPaystackTransactions = async (req, res) => {
+  try {
+    const groupId = req.params.id;
+    const userId = req.user.userId;
+    
+    // Find group and check membership
+    const group = await Group.findById(groupId);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+    if (!group.members.map(m => m.toString()).includes(userId)) {
+      return res.status(403).json({ message: 'Only group members can sync transactions.' });
+    }
+
+    const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
+    const Transaction = require('../models/Transaction');
+    
+    // Get all pending contributions for this group
+    const pendingContributions = group.contributions.filter(c => c.status === 'pending');
+    let syncedCount = 0;
+    let errors = [];
+
+    for (const contribution of pendingContributions) {
+      try {
+        // Verify payment with Paystack
+        const verifyUrl = `https://api.paystack.co/transaction/verify/${contribution.paystackReference}`;
+        const paystackRes = await axios.get(verifyUrl, {
+          headers: { Authorization: `Bearer ${paystackSecret}` }
+        });
+        
+        const paymentData = paystackRes.data;
+        if (paymentData.status && paymentData.data.status === 'success') {
+          // Update contribution status
+          contribution.status = 'completed';
+          contribution.verifiedAt = new Date();
+          contribution.amount = paymentData.data.amount / 100; // Update with actual amount
+          
+          // Create or update transaction record
+          const existingTransaction = await Transaction.findOne({
+            'paystackReference': contribution.paystackReference
+          });
+
+          if (!existingTransaction) {
+            const newTransaction = new Transaction({
+              user: contribution.user,
+              group: groupId,
+              type: 'contribution',
+              amount: paymentData.data.amount / 100,
+              status: 'completed',
+              method: 'paystack',
+              paystackReference: contribution.paystackReference,
+              date: new Date(),
+              reason: 'Group contribution'
+            });
+            await newTransaction.save();
+          }
+          
+          syncedCount++;
+        } else {
+          errors.push(`Payment ${contribution.paystackReference} verification failed`);
+        }
+      } catch (err) {
+        errors.push(`Error syncing ${contribution.paystackReference}: ${err.message}`);
+      }
+    }
+
+    await group.save();
+    await group.populate('contributions.user', 'name email');
+
+    res.json({ 
+      message: `Sync completed. ${syncedCount} transactions synced.`,
+      syncedCount,
+      errors,
+      group
+    });
+  } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };

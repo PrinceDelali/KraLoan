@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { api } from './api';
+import LoadingSpinner from './components/LoadingSpinner';
 
 export default function InviteLanding() {
   const { token } = useParams();
@@ -25,7 +26,7 @@ export default function InviteLanding() {
     })();
   }, [token]);
 
-  if (loading) return <div className="p-12 text-center">Loading invite...</div>;
+  if (loading) return <LoadingSpinner message="Loading invite..." />;
   if (error) return <div className="p-12 text-center text-red-500">{error}</div>;
 
   return (

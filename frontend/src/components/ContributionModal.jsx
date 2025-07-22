@@ -9,6 +9,7 @@ export default function ContributionModal({ open, onClose, group, user, onSucces
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [currentUser, setCurrentUser] = useState(user || {});
+  const [successInfo, setSuccessInfo] = useState(null);
 
   // Fetch current user profile if phone number is missing
   useEffect(() => {
@@ -28,6 +29,17 @@ export default function ContributionModal({ open, onClose, group, user, onSucces
   }, [open, currentUser.phone, currentUser.email]);
 
   if (!open) return null;
+
+  if (successInfo) {
+    return (
+      <div className="p-6 text-center">
+        <div className="text-green-600 text-2xl font-bold mb-2">Contribution Successful!</div>
+        <div className="mb-2">You contributed <span className="font-bold">GHS {successInfo.contributed}</span></div>
+        <div className="mb-2">New group total: <span className="font-bold">GHS {successInfo.total}</span></div>
+        <div className="text-gray-500 text-sm">This will be visible to all group members.</div>
+      </div>
+    );
+  }
 
   const handlePaystackCallback = async (response) => {
     try {
@@ -49,8 +61,16 @@ export default function ContributionModal({ open, onClose, group, user, onSucces
       setMethod('');
       setError('');
       setLoading(false);
+      setSuccessInfo({
+        contributed: data.group.contributions[data.group.contributions.length - 1].amount,
+        total: data.group.totalSavings
+      });
       onSuccess && onSuccess(data.group || data);
-      onClose();
+      // Optionally close modal after a delay
+      setTimeout(() => {
+        setSuccessInfo(null);
+        onClose();
+      }, 2500);
     } catch (err) {
       setError(err.message || 'Payment succeeded but failed to record contribution.');
       setLoading(false);

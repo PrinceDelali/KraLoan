@@ -7,6 +7,7 @@ const TransactionSchema = new mongoose.Schema({
   amount: { type: Number, required: true },
   status: { type: String, enum: ['pending', 'approved', 'completed', 'rejected'], default: 'pending' },
   method: { type: String },
+  paystackReference: { type: String, unique: true, sparse: true },
   date: { type: Date, default: Date.now },
   reason: { type: String },
 }, { timestamps: true });

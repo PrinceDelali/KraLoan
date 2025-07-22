@@ -4,6 +4,7 @@ import { api } from './api';
 import PendingRequestsPanel from './components/PendingRequestsPanel';
 import GroupMessagesBoard from './components/GroupMessagesBoard';
 import GroupLoansBoard from './components/GroupLoansBoard';
+import LoadingSpinner from './components/LoadingSpinner';
 
 export default function GroupDetails() {
   const { groupId } = useParams();
@@ -41,7 +42,7 @@ export default function GroupDetails() {
       .finally(() => setPendingLoading(false));
   }, [group]);
 
-  if (loading) return <div className="p-12 text-center">Loading group details...</div>;
+  if (loading) return <LoadingSpinner message="Loading group details..." />;
   if (error) return <div className="p-12 text-center text-red-500">{error}</div>;
 
   // Helper: get role for a member

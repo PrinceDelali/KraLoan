@@ -3,6 +3,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { api } from './api';
 import GroupDirectory from './GroupDirectory';
 import PendingRequestsPanel from './PendingRequestsPanel';
+import LoadingSpinner from './components/LoadingSpinner';
 import {
   User,
   Home,
@@ -30,6 +31,7 @@ import {
   DollarSign,
   TrendingDown,
   Loader2,
+  Menu, // <-- Add this line to import Menu icon
 } from 'lucide-react';
 
 // Error Boundary Component
@@ -67,72 +69,94 @@ class ErrorBoundary extends React.Component {
 }
 
 // Sidebar Component
-const Sidebar = ({ activeTab, setActiveTab, setShowSettings, pendingRequestsCount }) => {
+const Sidebar = ({ activeTab, setActiveTab, setShowSettings, pendingRequestsCount, isMobileOpen, setIsMobileOpen }) => {
   const navigate = useNavigate();
 
   return (
-    <div className="w-64 bg-white shadow-xl flex flex-col">
-      <div className="p-6">
-        <h1 className="text-2xl font-bold text-blue-700">KraLoan</h1>
-      </div>
-      <nav className="mt-8 flex-1">
-        {[
-          { id: 'dashboard', label: 'Dashboard', icon: Home },
-          { id: 'savings', label: 'Savings', icon: PiggyBank },
-          { id: 'history', label: 'History', icon: History },
-          { id: 'upcoming', label: 'Upcoming', icon: Calendar },
-          { id: 'notifications', label: 'Notifications', icon: Bell },
-          { id: 'withdrawals', label: 'Withdrawals', icon: ArrowDownToLine },
-          { id: 'chat', label: 'Help & Chat', icon: MessageCircle },
-        ].map((item) => (
+    <>
+      {/* Mobile Overlay */}
+      {isMobileOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          onClick={() => setIsMobileOpen(false)}
+        />
+      )}
+      
+      {/* Sidebar */}
+      <div className={`fixed lg:relative inset-y-0 left-0 z-50 w-64 bg-white shadow-xl flex flex-col transform transition-transform duration-300 ease-in-out ${
+        isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+      }`}>
+        <div className="p-4 lg:p-6">
+          <div className="flex items-center justify-between">
+            <h1 className="text-xl lg:text-2xl font-bold text-blue-700">KraLoan</h1>
+            <button
+              onClick={() => setIsMobileOpen(false)}
+              className="lg:hidden p-2 rounded-lg hover:bg-gray-100"
+            >
+              <X className="w-5 h-5 text-gray-600" />
+            </button>
+          </div>
+        </div>
+        <nav className="mt-4 lg:mt-8 flex-1 overflow-y-auto">
+          {[
+            { id: 'dashboard', label: 'Dashboard', icon: Home },
+            { id: 'savings', label: 'Savings', icon: PiggyBank },
+            { id: 'history', label: 'History', icon: History },
+            { id: 'upcoming', label: 'Upcoming', icon: Calendar },
+            { id: 'notifications', label: 'Notifications', icon: Bell },
+            { id: 'withdrawals', label: 'Withdrawals', icon: ArrowDownToLine },
+            { id: 'chat', label: 'Help & Chat', icon: MessageCircle },
+          ].map((item) => (
+            <Link
+              key={item.id}
+              to={`/dashboard/${item.id}`}
+              onClick={() => {
+                setShowSettings(false);
+                setIsMobileOpen(false);
+              }}
+              className={`w-full flex items-center px-4 lg:px-6 py-3 lg:py-3.5 text-left text-sm font-medium transition-all duration-200 ${
+                activeTab === item.id
+                  ? 'bg-blue-100 text-blue-700 border-r-4 border-blue-600'
+                  : 'text-gray-500 hover:bg-blue-50 hover:text-blue-600'
+              }`}
+              aria-label={`Navigate to ${item.label}`}
+              style={{ textDecoration: 'none' }}
+            >
+              <item.icon className="h-5 w-5 mr-3 flex-shrink-0" />
+              <span className="truncate">{item.label}</span>
+              {item.id === 'notifications' && pendingRequestsCount > 0 && (
+                <span className="ml-auto inline-block bg-yellow-400 text-white text-xs font-bold px-2 py-0.5 rounded-full animate-pulse">
+                  {pendingRequestsCount}
+                </span>
+              )}
+            </Link>
+          ))}
+        </nav>
+        <div className="p-4 lg:p-6 border-t border-gray-200">
+          <button
+            onClick={() => setShowSettings(true)}
+            className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-800 rounded-lg transition-colors"
+            aria-label="Open settings"
+          >
+            <Settings className="h-5 w-5 mr-3" />
+            Settings
+          </button>
           <Link
-            key={item.id}
-            to={`/dashboard/${item.id}`}
+            to="/login"
             onClick={() => {
-              setShowSettings(false);
+              localStorage.removeItem('token');
+              localStorage.removeItem('user');
             }}
-            className={`w-full flex items-center px-6 py-3.5 text-left text-sm font-medium transition-all duration-200 ${
-              activeTab === item.id
-                ? 'bg-blue-100 text-blue-700 border-r-4 border-blue-600'
-                : 'text-gray-500 hover:bg-blue-50 hover:text-blue-600'
-            }`}
-            aria-label={`Navigate to ${item.label}`}
+            className="w-full flex items-center px-4 py-3 text-sm font-medium text-red-500 hover:bg-red-100 hover:text-red-700 rounded-lg transition-colors mt-2"
+            aria-label="Logout"
             style={{ textDecoration: 'none' }}
           >
-            <item.icon className="h-5 w-5 mr-3" />
-            {item.label}
-            {item.id === 'notifications' && pendingRequestsCount > 0 && (
-              <span className="ml-2 inline-block bg-yellow-400 text-white text-xs font-bold px-2 py-0.5 rounded-full animate-pulse">
-                {pendingRequestsCount}
-              </span>
-            )}
+            <XCircle className="h-5 w-5 mr-3" />
+            Logout
           </Link>
-        ))}
-      </nav>
-      <div className="p-6 border-t border-gray-200">
-        <button
-          onClick={() => setShowSettings(true)}
-          className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-800 rounded-lg transition-colors"
-          aria-label="Open settings"
-        >
-          <Settings className="h-5 w-5 mr-3" />
-          Settings
-        </button>
-        <Link
-          to="/login"
-          onClick={() => {
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-          }}
-          className="w-full flex items-center px-4 py-3 text-sm font-medium text-red-500 hover:bg-red-100 hover:text-red-700 rounded-lg transition-colors mt-2"
-          aria-label="Logout"
-          style={{ textDecoration: 'none' }}
-        >
-          <XCircle className="h-5 w-5 mr-3" />
-          Logout
-        </Link>
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 
@@ -183,6 +207,7 @@ const SusuDashboard = () => {
   const { tab } = useParams();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(tab || 'dashboard');
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [showEditMembers, setShowEditMembers] = useState(false);
   const [editGroupId, setEditGroupId] = useState(null);
   const [editMembers, setEditMembers] = useState([]);
@@ -643,7 +668,7 @@ const SusuDashboard = () => {
     { id: 3, type: 'meeting', message: 'Group meeting scheduled soon', time: '2 days ago' },
   ];
 
-  if (isLoading) return <div className="flex justify-center items-center min-h-screen">Loading dashboard...</div>;
+  if (isLoading) return <LoadingSpinner message="Loading your dashboard..." />;
   if (error) return <div className="flex justify-center items-center min-h-screen text-red-600">{error}</div>;
 
   const StatusBadge = ({ status }) => {
@@ -910,8 +935,26 @@ const SusuDashboard = () => {
     return (
       <ErrorBoundary>
         <div className="flex min-h-screen bg-gray-50">
-          <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} setShowSettings={setShowSettings} pendingRequestsCount={pendingRequestsCount} />
-          {renderSettings()}
+          {/* Mobile Menu Button */}
+          <button
+            onClick={() => setIsMobileOpen(true)}
+            className="fixed top-4 left-4 z-30 lg:hidden p-2 bg-white rounded-lg shadow-lg hover:bg-gray-50 transition-colors"
+            aria-label="Open mobile menu"
+          >
+            <Menu className="w-6 h-6 text-gray-600" />
+          </button>
+          
+          <Sidebar 
+            activeTab={activeTab} 
+            setActiveTab={setActiveTab} 
+            setShowSettings={setShowSettings} 
+            pendingRequestsCount={pendingRequestsCount}
+            isMobileOpen={isMobileOpen}
+            setIsMobileOpen={setIsMobileOpen}
+          />
+          <div className="flex-1 lg:ml-0">
+            {renderSettings()}
+          </div>
         </div>
       </ErrorBoundary>
     );
@@ -920,20 +963,38 @@ const SusuDashboard = () => {
   return (
     <ErrorBoundary>
       <div className="flex min-h-screen bg-gray-50">
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} setShowSettings={setShowSettings} pendingRequestsCount={pendingRequestsCount} />
-        <main className="flex-1 p-4 sm:p-8">
+        {/* Mobile Menu Button */}
+        <button
+          onClick={() => setIsMobileOpen(true)}
+          className="fixed top-4 left-4 z-30 lg:hidden p-2 bg-white rounded-lg shadow-lg hover:bg-gray-50 transition-colors"
+          aria-label="Open mobile menu"
+        >
+          <Menu className="w-6 h-6 text-gray-600" />
+        </button>
+        
+        <Sidebar 
+          activeTab={activeTab} 
+          setActiveTab={setActiveTab} 
+          setShowSettings={setShowSettings} 
+          pendingRequestsCount={pendingRequestsCount}
+          isMobileOpen={isMobileOpen}
+          setIsMobileOpen={setIsMobileOpen}
+        />
+        <main className="flex-1 p-4 sm:p-8 lg:ml-0">
           {activeTab === 'dashboard' && (
             <React.Fragment>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 mb-6 lg:mb-8">
                 {/* Quick Actions */}
-                <div className="bg-white rounded-xl shadow p-6 flex flex-col items-center">
-                  <h3 className="text-lg font-semibold mb-4">Quick Actions</h3>
-                  <button className="w-full bg-blue-600 text-white px-4 py-2 rounded mb-2 hover:bg-blue-700" onClick={() => setShowCreateGroup(true)}>Create Group</button>
-                  <button className="w-full bg-green-600 text-white px-4 py-2 rounded mb-2 hover:bg-green-700" onClick={() => setShowJoinGroup(true)}>Join Group</button>
-                  <button className="w-full bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600" onClick={() => setActiveTab('loans')}>Request Loan</button>
+                <div className="bg-white rounded-xl shadow p-4 lg:p-6 flex flex-col items-center">
+                  <h3 className="text-lg font-semibold mb-4 text-center">Quick Actions</h3>
+                  <div className="w-full space-y-3">
+                    <button className="w-full bg-blue-600 text-white px-4 py-3 rounded-lg mb-2 hover:bg-blue-700 transition-colors text-sm lg:text-base font-medium" onClick={() => setShowCreateGroup(true)}>Create Group</button>
+                    <button className="w-full bg-green-600 text-white px-4 py-3 rounded-lg mb-2 hover:bg-green-700 transition-colors text-sm lg:text-base font-medium" onClick={() => setShowJoinGroup(true)}>Join Group</button>
+                    <button className="w-full bg-yellow-500 text-white px-4 py-3 rounded-lg hover:bg-yellow-600 transition-colors text-sm lg:text-base font-medium" onClick={() => setActiveTab('loans')}>Request Loan</button>
+                  </div>
                 </div>
                 {/* Recent Activity */}
-                <div className="bg-white rounded-xl shadow p-6 md:col-span-2">
+                <div className="bg-white rounded-xl shadow p-4 lg:p-6 lg:col-span-2">
                   <h3 className="text-lg font-semibold mb-4">Recent Activity</h3>
                   {recentActivity.length === 0 ? (
                     <div className="text-gray-400">No recent activity.</div>
@@ -1037,33 +1098,33 @@ const SusuDashboard = () => {
                 </div>
               </div>
               
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="bg-white rounded-xl shadow-md p-6 flex flex-col items-center hover:shadow-lg transition-shadow duration-300">
-                    <PiggyBank className="h-8 w-8 text-green-600 mb-2" />
-                    <div className="text-gray-600">Total Saved</div>
-                    <div className="text-2xl font-bold text-blue-600">GHS {totalSaved}</div>
+              <div className="space-y-4 lg:space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+                  <div className="bg-white rounded-xl shadow-md p-4 lg:p-6 flex flex-col items-center hover:shadow-lg transition-shadow duration-300">
+                    <PiggyBank className="h-6 w-6 lg:h-8 lg:w-8 text-green-600 mb-2" />
+                    <div className="text-gray-600 text-sm lg:text-base text-center">Total Saved</div>
+                    <div className="text-xl lg:text-2xl font-bold text-blue-600">GHS {totalSaved}</div>
                   </div>
-                  <div className="bg-white rounded-xl shadow-md p-6 flex flex-col items-center hover:shadow-lg transition-shadow duration-300">
-                    <TrendingUp className="h-8 w-8 text-blue-600 mb-2" />
-                    <div className="text-gray-600">Monthly Contribution</div>
-                    <div className="text-2xl font-bold text-blue-600">GHS {monthlyContribution}</div>
+                  <div className="bg-white rounded-xl shadow-md p-4 lg:p-6 flex flex-col items-center hover:shadow-lg transition-shadow duration-300">
+                    <TrendingUp className="h-6 w-6 lg:h-8 lg:w-8 text-blue-600 mb-2" />
+                    <div className="text-gray-600 text-sm lg:text-base text-center">Monthly Contribution</div>
+                    <div className="text-xl lg:text-2xl font-bold text-blue-600">GHS {monthlyContribution}</div>
                   </div>
-                  <div className="bg-white rounded-xl shadow-md p-6 flex flex-col items-center hover:shadow-lg transition-shadow duration-300">
-                    <CreditCard className="h-8 w-8 text-purple-600 mb-2" />
-                    <div className="text-gray-600">Target</div>
-                    <div className="text-2xl font-bold text-purple-600">GHS {groupTarget}</div>
+                  <div className="bg-white rounded-xl shadow-md p-4 lg:p-6 flex flex-col items-center hover:shadow-lg transition-shadow duration-300 sm:col-span-2 lg:col-span-1">
+                    <CreditCard className="h-6 w-6 lg:h-8 lg:w-8 text-purple-600 mb-2" />
+                    <div className="text-gray-600 text-sm lg:text-base text-center">Target</div>
+                    <div className="text-xl lg:text-2xl font-bold text-purple-600">GHS {groupTarget}</div>
                   </div>
                 </div>
                 
-                <div className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow duration-300">
-                  <div className="flex justify-between items-center mb-4">
+                <div className="bg-white rounded-xl shadow-md p-4 lg:p-6 hover:shadow-lg transition-shadow duration-300">
+                  <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center mb-4 space-y-3 lg:space-y-0">
                     <div>
-                      <div className="text-gray-700 font-medium">Progress to Target</div>
+                      <div className="text-gray-700 font-medium text-sm lg:text-base">Progress to Target</div>
                       <div className="text-sm text-gray-500">{progressPercentage}% Complete</div>
                     </div>
                     <button
-                      className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-transform transform hover:scale-105"
+                      className="bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm lg:text-base w-full lg:w-auto"
                       onClick={() => setShowContribute(true)}
                       aria-label="Make contribution"
                     >
@@ -1078,11 +1139,11 @@ const SusuDashboard = () => {
                   </div>
                 </div>
                 
-                <div className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow duration-300">
-                  <div className="flex justify-between items-center mb-4">
+                <div className="bg-white rounded-xl shadow-md p-4 lg:p-6 hover:shadow-lg transition-shadow duration-300">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 space-y-2 sm:space-y-0">
                     <div className="font-semibold text-lg">Recent Transactions</div>
                     <button
-                      className="text-blue-600 font-semibold hover:underline"
+                      className="text-blue-600 font-semibold hover:underline text-sm lg:text-base"
                       onClick={() => {
                         setActiveTab('history');
                         navigate('/dashboard/history');
@@ -1094,15 +1155,17 @@ const SusuDashboard = () => {
                   </div>
                   <div className="divide-y">
                     {transactions.slice(0, 5).map((tx, idx) => (
-                      <div key={idx} className="flex justify-between py-2">
-                        <div>
-                          <div className="font-medium">{tx.type === 'contribution' ? 'Contribution' : 'Withdrawal'}</div>
+                      <div key={idx} className="flex flex-col sm:flex-row sm:justify-between py-3 space-y-1 sm:space-y-0">
+                        <div className="flex-1">
+                          <div className="font-medium text-sm lg:text-base">{tx.type === 'contribution' ? 'Contribution' : 'Withdrawal'}</div>
                           <div className="text-xs text-gray-500">{formatDate(tx.date || tx.createdAt)}</div>
                         </div>
-                        <div className={tx.type === 'contribution' ? 'text-green-700' : 'text-red-700'}>
-                          {tx.type === 'contribution' ? '+' : '-'}GHS {tx.amount || 0}
+                        <div className="flex items-center justify-between sm:justify-end space-x-2">
+                          <div className={`font-semibold text-sm lg:text-base ${tx.type === 'contribution' ? 'text-green-700' : 'text-red-700'}`}>
+                            {tx.type === 'contribution' ? '+' : '-'}GHS {tx.amount || 0}
+                          </div>
+                          <StatusBadge status={tx.status || 'Completed'} />
                         </div>
-                        <StatusBadge status={tx.status || 'Completed'} />
                       </div>
                     ))}
                     {transactions.length === 0 && (
@@ -1111,23 +1174,23 @@ const SusuDashboard = () => {
                   </div>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6 mt-6">
                   <button
-                    className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-transform transform hover:scale-105 shadow-sm"
+                    className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-green-700 transition-colors shadow-sm text-sm lg:text-base"
                     onClick={() => setShowCreateGroup(true)}
                     aria-label="Create new group"
                   >
                     Create Group
                   </button>
                   <button
-                    className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-transform transform hover:scale-105 shadow-sm"
+                    className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-sm text-sm lg:text-base"
                     onClick={() => setShowJoinGroup(true)}
                     aria-label="Join existing group"
                   >
                     Join Group
                   </button>
                   <button
-                    className="w-full bg-purple-600 text-white py-3 rounded-lg font-semibold hover:bg-purple-700 transition-transform transform hover:scale-105 shadow-sm"
+                    className="w-full bg-purple-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-purple-700 transition-colors shadow-sm text-sm lg:text-base sm:col-span-2 lg:col-span-1"
                     onClick={() => setShowWithdraw(true)}
                     aria-label="Request withdrawal"
                   >
@@ -1140,12 +1203,12 @@ const SusuDashboard = () => {
           
           {activeTab === 'savings' && (
             <div className="space-y-8">
-              <div className="flex justify-between items-center">
-                <h2 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-green-600">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-4 sm:space-y-0">
+                <h2 className="text-2xl lg:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-green-600">
                   My Savings Groups
                 </h2>
                 <button
-                  className="bg-gradient-to-r from-green-500 to-green-700 text-white px-6 py-3 rounded-lg font-semibold hover:from-green-600 hover:to-green-800 transition-transform transform hover:scale-105 shadow-lg flex items-center"
+                  className="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 lg:px-6 py-3 rounded-lg font-semibold hover:from-green-600 hover:to-green-800 transition-colors shadow-lg flex items-center justify-center text-sm lg:text-base"
                   onClick={() => setShowCreateGroup(true)}
                   aria-label="Create new group"
                 >
@@ -1155,17 +1218,17 @@ const SusuDashboard = () => {
               </div>
               
               {groups.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
                   {groups.map((group) => {
                     const isAdmin = group.admins?.some(a => (a._id || a.id || a) === currentUser?._id);
                     const isMember = group.members?.some(m => (m._id || m.id || m) === currentUser?._id);
                     return (
                       <div
                         key={group._id}
-                        className="bg-white rounded-xl shadow-md p-6 hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+                        className="bg-white rounded-xl shadow-md p-4 lg:p-6 hover:shadow-xl transition-all duration-300"
                       >
-                        <div className="flex justify-between items-start">
-                          <div>
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start space-y-3 sm:space-y-0">
+                          <div className="flex-1">
                             <h3 className="text-lg font-semibold text-gray-800">{group.name}</h3>
                             <p className="text-sm text-gray-500 mt-1">{group.description || 'No description'}</p>
                             <div className="mt-2 text-sm text-gray-600">
@@ -1173,23 +1236,23 @@ const SusuDashboard = () => {
                               <span>Monthly: GHS {group.monthlyContribution || 0}</span>
                             </div>
                           </div>
-                          <div className="flex space-x-3">
+                          <div className="flex flex-wrap gap-2 sm:gap-3">
                             <button
                               onClick={() => handleOpenEditMembers(group)}
-                              className="text-blue-600 hover:text-blue-800 transition-transform transform hover:scale-110"
+                              className="text-blue-600 hover:text-blue-800 transition-colors p-1"
                               aria-label={`Edit members of ${group.name}`}
                             >
-                              <Edit3 className="h-6 w-6" />
+                              <Edit3 className="h-5 w-5 sm:h-6 sm:w-6" />
                             </button>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleDeleteGroup(group._id);
                               }}
-                              className="text-red-600 hover:text-red-800 transition-transform transform hover:scale-110"
+                              className="text-red-600 hover:text-red-800 transition-colors p-1"
                               aria-label={`Delete ${group.name}`}
                             >
-                              <XCircle className="h-6 w-6" />
+                              <XCircle className="h-5 w-5 sm:h-6 sm:w-6" />
                             </button>
                             {/* Leave Group button for members who are not admins */}
                             {!isAdmin && isMember && (
@@ -1206,7 +1269,7 @@ const SusuDashboard = () => {
                                     alert(err.message || 'Failed to leave group.');
                                   }
                                 }}
-                                className="text-yellow-600 hover:text-yellow-800 transition-transform transform hover:scale-110 border border-yellow-400 rounded px-2 py-1 ml-2 text-xs font-semibold"
+                                className="text-yellow-600 hover:text-yellow-800 transition-colors border border-yellow-400 rounded px-2 py-1 text-xs font-semibold"
                                 aria-label={`Leave ${group.name}`}
                               >
                                 Leave Group
@@ -1231,19 +1294,19 @@ const SusuDashboard = () => {
                   })}
                 </div>
               ) : (
-                <div className="bg-gradient-to-br from-blue-50 to-green-50 rounded-xl shadow-md p-8 text-center">
-                  <PiggyBank className="h-12 w-12 text-blue-500 mx-auto mb-4" />
-                  <p className="text-gray-600 text-lg">No groups yet. Start by creating or joining a savings group!</p>
-                  <div className="mt-6 flex justify-center space-x-4">
+                <div className="bg-gradient-to-br from-blue-50 to-green-50 rounded-xl shadow-md p-6 lg:p-8 text-center">
+                  <PiggyBank className="h-10 w-10 lg:h-12 lg:w-12 text-blue-500 mx-auto mb-4" />
+                  <p className="text-gray-600 text-base lg:text-lg">No groups yet. Start by creating or joining a savings group!</p>
+                  <div className="mt-6 flex flex-col sm:flex-row justify-center space-y-3 sm:space-y-0 sm:space-x-4">
                     <button
-                      className="bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition-transform transform hover:scale-105"
+                      className="bg-green-600 text-white px-4 lg:px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors text-sm lg:text-base"
                       onClick={() => setShowCreateGroup(true)}
                       aria-label="Create new group"
                     >
                       Create Group
                     </button>
                     <button
-                      className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-transform transform hover:scale-105"
+                      className="bg-blue-600 text-white px-4 lg:px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm lg:text-base"
                       onClick={() => setShowJoinGroup(true)}
                       aria-label="Join existing group"
                     >
@@ -1256,39 +1319,39 @@ const SusuDashboard = () => {
           )}
           
           {activeTab === 'history' && (
-            <div className="space-y-6">
-              <h2 className="text-3xl font-bold text-gray-800">Contribution History</h2>
+            <div className="space-y-4 lg:space-y-6">
+              <h2 className="text-2xl lg:text-3xl font-bold text-gray-800">Contribution History</h2>
               <div className="bg-white rounded-xl shadow-md overflow-x-auto hover:shadow-lg transition-shadow duration-300">
                 <table className="min-w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
+                      <th className="px-3 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                      <th className="px-3 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                      <th className="px-3 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-3 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {contributionHistory.length > 0 ? (
                       contributionHistory.map((contribution, index) => (
                         <tr key={index}>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <td className="px-3 lg:px-6 py-4 whitespace-nowrap text-xs lg:text-sm text-gray-900">
                             {formatDate(contribution.date || contribution.createdAt)}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          <td className="px-3 lg:px-6 py-4 whitespace-nowrap text-xs lg:text-sm font-medium text-gray-900">
                             GHS {contribution.amount || 0}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-3 lg:px-6 py-4 whitespace-nowrap">
                             <StatusBadge status={contribution.status || 'Completed'} />
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <td className="px-3 lg:px-6 py-4 whitespace-nowrap text-xs lg:text-sm text-gray-900">
                             {contribution.method || 'N/A'}
                           </td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan="4" className="px-6 py-4 text-center text-gray-500">
+                        <td colSpan="4" className="px-3 lg:px-6 py-4 text-center text-gray-500 text-sm lg:text-base">
                           No contribution history yet.
                         </td>
                       </tr>

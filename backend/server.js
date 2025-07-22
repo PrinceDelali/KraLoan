@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
+const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
@@ -15,6 +16,8 @@ const io = new Server(server, {
 });
 
 const onlineUsers = new Map();
+const groupController = require('./controllers/groupController');
+groupController.setIO(io);
 
 app.use(cors());
 app.use(express.json());
@@ -32,9 +35,108 @@ mongoose.connect(process.env.MONGODB_URI, {
   console.error('MongoDB connection error:', err);
 });
 
+console.log('MONGODB_URI:', process.env.MONGODB_URI);
+
 // Basic route
 app.get('/', (req, res) => {
   res.send('KraLoan Backend API is running');
+});
+
+// Paystack Webhook for automatic transaction syncing
+app.post('/api/webhook/paystack', express.raw({ type: 'application/json' }), async (req, res) => {
+  try {
+    // Verify webhook signature
+    const hash = crypto.createHmac('sha512', process.env.PAYSTACK_SECRET_KEY)
+      .update(JSON.stringify(req.body))
+      .digest('hex');
+    
+    if (hash !== req.headers['x-paystack-signature']) {
+      console.log('Invalid webhook signature');
+      return res.status(400).send('Invalid signature');
+    }
+
+    const event = req.body;
+    console.log('Paystack webhook received:', event.event);
+
+    if (event.event === 'charge.success') {
+      const transaction = event.data;
+      const reference = transaction.reference;
+      const amount = transaction.amount / 100; // Convert from kobo to cedis
+      const status = transaction.status;
+      const metadata = transaction.metadata;
+
+      console.log('Processing successful payment:', {
+        reference,
+        amount,
+        status,
+        metadata
+      });
+
+      // Find and update the corresponding contribution
+      const Group = require('./models/Group');
+      const Transaction = require('./models/Transaction');
+      
+      // Look for the contribution in all groups
+      const groups = await Group.find({
+        'contributions.paystackReference': reference
+      });
+
+      if (groups.length > 0) {
+        const group = groups[0];
+        const contribution = group.contributions.find(c => c.paystackReference === reference);
+        
+        if (contribution && status === 'success') {
+          // Update contribution status
+          contribution.status = 'completed';
+          contribution.verifiedAt = new Date();
+          await group.save();
+
+          // Create or update transaction record
+          const existingTransaction = await Transaction.findOne({
+            'paystackReference': reference
+          });
+
+          if (!existingTransaction) {
+            const newTransaction = new Transaction({
+              user: contribution.user,
+              group: group._id,
+              type: 'contribution',
+              amount: amount,
+              status: 'completed',
+              method: 'paystack',
+              paystackReference: reference,
+              date: new Date(),
+              reason: 'Group contribution'
+            });
+            await newTransaction.save();
+          } else {
+            existingTransaction.status = 'completed';
+            existingTransaction.amount = amount;
+            await existingTransaction.save();
+          }
+
+          // Emit real-time update to group members
+          io.to(group._id.toString()).emit('contributionUpdated', {
+            groupId: group._id,
+            contribution: {
+              ...contribution.toObject(),
+              amount: amount,
+              status: 'completed'
+            }
+          });
+
+          console.log('Successfully processed Paystack webhook for contribution');
+        }
+      } else {
+        console.log('No group found with this Paystack reference:', reference);
+      }
+    }
+
+    res.status(200).send('Webhook processed successfully');
+  } catch (error) {
+    console.error('Webhook processing error:', error);
+    res.status(500).send('Webhook processing failed');
+  }
 });
 
 // Auth routes

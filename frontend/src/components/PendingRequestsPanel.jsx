@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api';
+import LoadingDots from './LoadingDots';
 
 export default function PendingRequestsPanel({ groupId, isAdmin }) {
   const [pendingRequests, setPendingRequests] = useState([]);
@@ -47,7 +48,7 @@ export default function PendingRequestsPanel({ groupId, isAdmin }) {
   };
 
   if (!isAdmin) return null;
-  if (loading) return <div className="my-4 text-center">Loading pending requests...</div>;
+  if (loading) return <div className="my-4 text-center"><LoadingDots size="sm" variant="pulse" color="blue" /></div>;
   if (error) return <div className="my-4 text-center text-red-500">{error}</div>;
   if (!pendingRequests.length) return <div className="my-4 text-center text-gray-500">No pending requests.</div>;
 
