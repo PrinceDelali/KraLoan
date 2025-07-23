@@ -69,4 +69,7 @@ router.get('/:id/payouts/:payoutId/verify', auth, verifyPayoutStatus);
 // Upload group logo
 router.post('/:id/logo', auth, upload.single('logo'), require('../controllers/groupController').uploadGroupLogo);
 
+// Admin utility: Fix all pending contributions (mark as completed)
+router.post('/:id/fix-pending-contributions', auth, require('../controllers/groupController').fixPendingContributions);
+
 module.exports = router;

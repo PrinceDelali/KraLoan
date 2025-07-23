@@ -32,8 +32,9 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const res = await api.login({ email, password });
+      const userWithId = { ...res.user, id: res.user.id || res.user._id };
       localStorage.setItem('token', res.token);
-      localStorage.setItem('user', JSON.stringify(res.user));
+      localStorage.setItem('user', JSON.stringify(userWithId));
       // Check for inviteToken in URL
       const inviteToken = getInviteToken();
       const params = new URLSearchParams(location.search);

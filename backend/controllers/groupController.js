@@ -388,14 +388,23 @@ exports.contributeToGroup = async (req, res) => {
       return res.status(403).json({ message: 'Only group members can contribute.' });
     }
     // Record contribution in group
-    group.contributions.push({ 
-      user: userId, 
-      amount, 
-      paystackReference,
-      status: 'completed',
-      verifiedAt: new Date(),
-      method: method || 'paystack'
-    });
+    // Check if a pending contribution with this reference exists
+    let existing = group.contributions.find(c => c.paystackReference === paystackReference);
+    if (existing) {
+      existing.status = 'completed';
+      existing.verifiedAt = new Date();
+      existing.amount = amount;
+      existing.method = method || 'paystack';
+    } else {
+      group.contributions.push({ 
+        user: userId, 
+        amount, 
+        paystackReference,
+        status: 'completed',
+        verifiedAt: new Date(),
+        method: method || 'paystack'
+      });
+    }
     await group.save();
     // Optionally, record in Transaction model
     const transaction = new Transaction({
@@ -705,6 +714,27 @@ exports.syncPaystackTransactions = async (req, res) => {
       errors,
       group
     });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// --- ADMIN UTILITY: Mark all pending contributions as completed (no Paystack verification) ---
+exports.fixPendingContributions = async (req, res) => {
+  try {
+    const groupId = req.params.id;
+    const group = await Group.findById(groupId);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+    let fixed = 0;
+    group.contributions.forEach(c => {
+      if (c.status === 'pending') {
+        c.status = 'completed';
+        c.verifiedAt = new Date();
+        fixed++;
+      }
+    });
+    await group.save();
+    res.json({ message: `Fixed ${fixed} pending contributions.`, group });
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
   }

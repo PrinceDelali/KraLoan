@@ -207,6 +207,7 @@ export default function GroupDashboard() {
 
   if (loading) return <LoadingSpinner message="Loading group dashboard..." />;
   if (error) return <div className="p-12 text-center text-red-500">{error}</div>;
+  if (!group) return <div className="p-12 text-center text-gray-500">Group data is not available. Please refresh or try again later.</div>;
 
   const isAdmin = group.admins.some(admin => 
     admin._id === currentUser._id || 
@@ -289,7 +290,10 @@ export default function GroupDashboard() {
               onClose={() => setShowContributeModal(false)}
               group={group}
               user={currentUser}
-              onSuccess={updatedGroup => setGroup(updatedGroup)}
+              onSuccess={async () => {
+                const updatedGroup = await api.getGroupById(groupId);
+                setGroup(updatedGroup);
+              }}
             />
             {/* Payout Modal (admin only) */}
             {isAdmin && (
@@ -670,7 +674,10 @@ export default function GroupDashboard() {
               onClose={() => setShowContributeModal(false)}
               group={group}
               user={currentUser}
-              onSuccess={updatedGroup => setGroup(updatedGroup)}
+              onSuccess={async () => {
+                const updatedGroup = await api.getGroupById(groupId);
+                setGroup(updatedGroup);
+              }}
             />
             {/* Contribution Schedule */}
             <div className="mb-8">

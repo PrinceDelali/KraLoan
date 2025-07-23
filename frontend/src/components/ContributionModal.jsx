@@ -17,9 +17,10 @@ export default function ContributionModal({ open, onClose, group, user, onSucces
       const fetchUserProfile = async () => {
         try {
           const userProfile = await api.getCurrentUser();
-          setCurrentUser(userProfile);
+          const userWithId = { ...userProfile, id: userProfile.id || userProfile._id };
+          setCurrentUser(userWithId);
           // Update localStorage with complete user data
-          localStorage.setItem('user', JSON.stringify(userProfile));
+          localStorage.setItem('user', JSON.stringify(userWithId));
         } catch (err) {
           console.error('Failed to fetch user profile:', err);
         }
@@ -43,29 +44,22 @@ export default function ContributionModal({ open, onClose, group, user, onSucces
 
   const handlePaystackCallback = async (response) => {
     try {
-      const res = await fetch(`/api/group/${group._id || group.id}/contribute`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify({
-          amount: Number(amount),
-          paystackReference: response.reference,
-          method,
-        }),
+      await api.createTransaction({
+        group: group._id || group.id,
+        type: 'contribution',
+        amount: Number(amount),
+        paystackReference: response.reference,
+        method,
       });
-      if (!res.ok) throw new Error('Failed to record contribution');
-      const data = await res.json();
       setAmount('');
       setMethod('');
       setError('');
       setLoading(false);
       setSuccessInfo({
-        contributed: data.group.contributions[data.group.contributions.length - 1].amount,
-        total: data.group.totalSavings
+        contributed: Number(amount),
+        total: null // Optionally, fetch updated group info if you want to show new total
       });
-      onSuccess && onSuccess(data.group || data);
+      onSuccess && onSuccess();
       // Optionally close modal after a delay
       setTimeout(() => {
         setSuccessInfo(null);

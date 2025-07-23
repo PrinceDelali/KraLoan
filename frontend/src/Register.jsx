@@ -49,8 +49,9 @@ export default function Register() {
       const res = await api.register({ email, password, name: email, userType, ghanaCard }); // userType and ghanaCard added
       // Immediately log in after registration
       const loginRes = await api.login({ email, password });
+      const userWithId = { ...loginRes.user, id: loginRes.user.id || loginRes.user._id };
       localStorage.setItem('token', loginRes.token);
-      localStorage.setItem('user', JSON.stringify(loginRes.user));
+      localStorage.setItem('user', JSON.stringify(userWithId));
       // If inviteToken is present, join group via invite
       if (inviteToken) {
         try {
